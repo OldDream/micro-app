@@ -33,9 +33,9 @@ import { getNoHashMicroPathFromURL, router } from './sandbox/router'
  * define element
  * @param tagName element name
  */
-export function defineElement (tagName: string): void {
+export function defineElement(tagName: string): void {
   class MicroAppElement extends HTMLElement implements MicroAppElementType {
-    static get observedAttributes (): string[] {
+    static get observedAttributes(): string[] {
       return ['name', 'url']
     }
 
@@ -59,7 +59,7 @@ export function defineElement (tagName: string): void {
     // baseRoute: route prefix, default is ''
     // keep-alive: open keep-alive mode
 
-    public connectedCallback (): void {
+    public connectedCallback(): void {
       const cacheCount = ++this.connectedCount
       this.connectStateMap.set(cacheCount, true)
       /**
@@ -84,7 +84,7 @@ export function defineElement (tagName: string): void {
       })
     }
 
-    public disconnectedCallback (): void {
+    public disconnectedCallback(): void {
       this.connectStateMap.set(this.connectedCount, false)
       this.handleDisconnected()
     }
@@ -93,7 +93,7 @@ export function defineElement (tagName: string): void {
      * Re render app from the command line
      * MicroAppElement.reload(destroy)
      */
-    public reload (destroy?: boolean): Promise<boolean> {
+    public reload(destroy?: boolean): Promise<boolean> {
       return new Promise((resolve) => {
         const handleAfterReload = () => {
           this.removeEventListener(lifeCycles.MOUNTED, handleAfterReload)
@@ -102,6 +102,11 @@ export function defineElement (tagName: string): void {
         }
         this.addEventListener(lifeCycles.MOUNTED, handleAfterReload)
         this.addEventListener(lifeCycles.AFTERSHOW, handleAfterReload)
+        // TODO
+        const app = appInstanceMap.get(this.appName)
+        if (app?.sandBox.microAppWindow.location?.self) {
+          app.sandBox.microAppWindow.location.self.isReload = true
+        }
         this.handleDisconnected(destroy, () => {
           this.handleConnected()
         })
@@ -112,7 +117,7 @@ export function defineElement (tagName: string): void {
      * common action for unmount
      * @param destroy reload param
      */
-    private handleDisconnected (destroy = false, callback?: CallableFunction): void {
+    private handleDisconnected(destroy = false, callback?: CallableFunction): void {
       const app = appInstanceMap.get(this.appName)
       if (app && !app.isUnmounted() && !app.isHidden()) {
         // keep-alive
@@ -124,7 +129,7 @@ export function defineElement (tagName: string): void {
       }
     }
 
-    public attributeChangedCallback (attr: ObservedAttrName, _oldVal: string, newVal: string): void {
+    public attributeChangedCallback(attr: ObservedAttrName, _oldVal: string, newVal: string): void {
       if (
         this.legalAttribute(attr, newVal) &&
         this[attr === ObservedAttrName.NAME ? 'appName' : 'appUrl'] !== newVal
@@ -161,14 +166,14 @@ export function defineElement (tagName: string): void {
     }
 
     // handle for connectedCallback run before attributeChangedCallback
-    private handleInitialNameAndUrl (): void {
+    private handleInitialNameAndUrl(): void {
       this.connectStateMap.get(this.connectedCount) && this.handleConnected()
     }
 
     /**
      * first mount of this app
      */
-    private handleConnected (): void {
+    private handleConnected(): void {
       if (!this.appName || !this.appUrl) return
 
       if (this.getDisposeResult('shadowDOM') && !this.shadowRoot && isFunction(this.attachShadow)) {
@@ -258,7 +263,7 @@ export function defineElement (tagName: string): void {
     }
 
     // remount app or create app if attribute url or name change
-    private actionsForAttributeChange (
+    private actionsForAttributeChange(
       formatAttrName: string,
       formatAttrUrl: string,
       oldApp: AppInterface | void,
@@ -270,7 +275,7 @@ export function defineElement (tagName: string): void {
 
       this.appName = formatAttrName
       this.appUrl = formatAttrUrl
-      ;(this.shadowRoot ?? this).innerHTML = ''
+        ; (this.shadowRoot ?? this).innerHTML = ''
       if (formatAttrName !== this.getAttribute('name')) {
         this.setAttribute('name', this.appName)
       }
@@ -291,18 +296,18 @@ export function defineElement (tagName: string): void {
             // the hidden keep-alive app is still active
             logError(`app name conflict, an app named ${this.appName} is running`)
           }
-        /**
-         * TODO:
-         *  1. oldApp必是unmountApp或preFetchApp，这里还应该考虑沙箱、iframe、样式隔离不一致的情况
-         *  2. unmountApp要不要判断样式隔离、沙箱、iframe，然后彻底删除并再次渲染？(包括handleConnected里的处理，先不改？)
-         * 推荐：if (
-         *  oldApp.url === this.appUrl &&
-         *  oldApp.ssrUrl === this.ssrUrl && (
-         *    oldApp.isUnmounted() ||
-         *    (oldApp.isPrefetch && this.sameCoreOptions(oldApp))
-         *  )
-         * )
-         */
+          /**
+           * TODO:
+           *  1. oldApp必是unmountApp或preFetchApp，这里还应该考虑沙箱、iframe、样式隔离不一致的情况
+           *  2. unmountApp要不要判断样式隔离、沙箱、iframe，然后彻底删除并再次渲染？(包括handleConnected里的处理，先不改？)
+           * 推荐：if (
+           *  oldApp.url === this.appUrl &&
+           *  oldApp.ssrUrl === this.ssrUrl && (
+           *    oldApp.isUnmounted() ||
+           *    (oldApp.isPrefetch && this.sameCoreOptions(oldApp))
+           *  )
+           * )
+           */
         } else if (oldApp.url === this.appUrl && oldApp.ssrUrl === this.ssrUrl) {
           // mount app
           this.handleMount(oldApp)
@@ -319,7 +324,7 @@ export function defineElement (tagName: string): void {
      * @param name attribute name
      * @param val attribute value
      */
-    private legalAttribute (name: string, val: AttrType): boolean {
+    private legalAttribute(name: string, val: AttrType): boolean {
       if (!isString(val) || !val) {
         logError(`unexpected attribute ${name}, please check again`, this.appName)
 
@@ -330,7 +335,7 @@ export function defineElement (tagName: string): void {
     }
 
     // create app instance
-    private handleCreateApp (): void {
+    private handleCreateApp(): void {
       const createAppInstance = () => new CreateApp({
         name: this.appName,
         url: this.appUrl,
@@ -369,7 +374,7 @@ export function defineElement (tagName: string): void {
      * 2. is remount in another container ?
      * 3. is remount with change properties of the container ?
      */
-    private handleMount (app: AppInterface): void {
+    private handleMount(app: AppInterface): void {
       app.isPrefetch = false
       // TODO: Can defer be removed?
       defer(() => this.mount(app))
@@ -378,7 +383,7 @@ export function defineElement (tagName: string): void {
     /**
      * public mount action for micro_app_element & create_app
      */
-    public mount (app: AppInterface): void {
+    public mount(app: AppInterface): void {
       app.mount({
         container: this.shadowRoot ?? this,
         inline: this.getDisposeResult('inline'),
@@ -396,7 +401,7 @@ export function defineElement (tagName: string): void {
      * @param destroy delete cache resources when unmount
      * @param unmountcb callback
      */
-    public unmount (destroy?: boolean, unmountcb?: CallableFunction): void {
+    public unmount(destroy?: boolean, unmountcb?: CallableFunction): void {
       const app = appInstanceMap.get(this.appName)
       if (app && !app.isUnmounted()) {
         app.unmount({
@@ -409,7 +414,7 @@ export function defineElement (tagName: string): void {
     }
 
     // hidden app when disconnectedCallback called with keep-alive
-    private handleHiddenKeepAliveApp (callback?: CallableFunction): void {
+    private handleHiddenKeepAliveApp(callback?: CallableFunction): void {
       const app = appInstanceMap.get(this.appName)
       if (app && !app.isUnmounted() && !app.isHidden()) {
         app.hiddenKeepAliveApp(callback)
@@ -417,7 +422,7 @@ export function defineElement (tagName: string): void {
     }
 
     // show app when connectedCallback called with keep-alive
-    private handleShowKeepAliveApp (app: AppInterface): void {
+    private handleShowKeepAliveApp(app: AppInterface): void {
       // must be async
       defer(() => app.showKeepAliveApp(this.shadowRoot ?? this))
     }
@@ -427,12 +432,12 @@ export function defineElement (tagName: string): void {
      * Global setting is lowest priority
      * @param name Configuration item name
      */
-    private getDisposeResult <T extends keyof OptionsType> (name: T): boolean {
+    private getDisposeResult<T extends keyof OptionsType>(name: T): boolean {
       return (this.compatibleProperties(name) || !!microApp.options[name]) && this.compatibleDisableProperties(name)
     }
 
     // compatible of disableScopecss & disableSandbox
-    private compatibleProperties (name: string): boolean {
+    private compatibleProperties(name: string): boolean {
       if (name === 'disable-scopecss') {
         return this.hasAttribute('disable-scopecss') || this.hasAttribute('disableScopecss')
       } else if (name === 'disable-sandbox') {
@@ -442,7 +447,7 @@ export function defineElement (tagName: string): void {
     }
 
     // compatible of disableScopecss & disableSandbox
-    private compatibleDisableProperties (name: string): boolean {
+    private compatibleDisableProperties(name: string): boolean {
       if (name === 'disable-scopecss') {
         return this.getAttribute('disable-scopecss') !== 'false' && this.getAttribute('disableScopecss') !== 'false'
       } else if (name === 'disable-sandbox') {
@@ -451,18 +456,18 @@ export function defineElement (tagName: string): void {
       return this.getAttribute(name) !== 'false'
     }
 
-    private useScopecss (): boolean {
+    private useScopecss(): boolean {
       return !(this.getDisposeResult('disable-scopecss') || this.getDisposeResult('shadowDOM'))
     }
 
-    private useSandbox (): boolean {
+    private useSandbox(): boolean {
       return !this.getDisposeResult('disable-sandbox')
     }
 
     /**
      * Determine whether the core options of the existApp is consistent with the new one
      */
-    private sameCoreOptions (app: AppInterface): boolean {
+    private sameCoreOptions(app: AppInterface): boolean {
       return (
         app.scopecss === this.useScopecss() &&
         app.useSandbox === this.useSandbox() &&
@@ -475,26 +480,26 @@ export function defineElement (tagName: string): void {
      * get baseRoute
      * getAttribute('baseurl') is compatible writing of versions below 0.3.1
      */
-    private getBaseRouteCompatible (): string {
+    private getBaseRouteCompatible(): string {
       return this.getAttribute('baseroute') ?? this.getAttribute('baseurl') ?? ''
     }
 
     // compatible of destroy
-    private getDestroyCompatibleResult (): boolean {
+    private getDestroyCompatibleResult(): boolean {
       return this.getDisposeResult('destroy') || this.getDisposeResult('destory')
     }
 
     /**
      * destroy has priority over destroy keep-alive
      */
-    private getKeepAliveModeResult (): boolean {
+    private getKeepAliveModeResult(): boolean {
       return this.getDisposeResult('keep-alive') && !this.getDestroyCompatibleResult()
     }
 
     /**
      * change ssrUrl in ssr mode
      */
-    private updateSsrUrl (baseUrl: string): void {
+    private updateSsrUrl(baseUrl: string): void {
       if (this.getDisposeResult('ssr')) {
         if (this.getDisposeResult('disable-memory-router') || this.getDisposeResult('disableSandbox')) {
           const rawLocation = globalEnv.rawWindow.location
@@ -517,7 +522,7 @@ export function defineElement (tagName: string): void {
     /**
      * get config of default page
      */
-    private getDefaultPageValue (): string {
+    private getDefaultPageValue(): string {
       return (
         router.getDefaultPage(this.appName) ||
         this.getAttribute('default-page') ||
@@ -531,7 +536,7 @@ export function defineElement (tagName: string): void {
      * @param key attr name
      * @param value attr value
      */
-    public setAttribute (key: string, value: any): void {
+    public setAttribute(key: string, value: any): void {
       if (key === 'data') {
         if (isPlainObject(value)) {
           const cloneValue: Record<NormalKey, unknown> = {}
@@ -552,7 +557,7 @@ export function defineElement (tagName: string): void {
     /**
      * Data from the base application
      */
-    set data (value: Record<PropertyKey, unknown> | null) {
+    set data(value: Record<PropertyKey, unknown> | null) {
       if (this.appName) {
         microApp.setData(this.appName, value as Record<PropertyKey, unknown>)
       } else {
@@ -563,7 +568,7 @@ export function defineElement (tagName: string): void {
     /**
      * get data only used in jsx-custom-event once
      */
-    get data (): Record<PropertyKey, unknown> | null {
+    get data(): Record<PropertyKey, unknown> | null {
       if (this.appName) {
         return microApp.getData(this.appName, true)
       } else if (this.cacheData) {
