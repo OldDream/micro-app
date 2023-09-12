@@ -102,9 +102,10 @@ export function defineElement(tagName: string): void {
         }
         this.addEventListener(lifeCycles.MOUNTED, handleAfterReload)
         this.addEventListener(lifeCycles.AFTERSHOW, handleAfterReload)
-        // TODO
+         const keepRouteState = this.getDisposeResult('keep-state-override-default')
+          // TODO
         const app = appInstanceMap.get(this.appName)
-        if (app?.sandBox.microAppWindow.location?.self) {
+        if (app?.sandBox.microAppWindow.location?.self && keepRouteState) {
           app.sandBox.microAppWindow.location.self.isReload = true
         }
         this.handleDisconnected(destroy, () => {

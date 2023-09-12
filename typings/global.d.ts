@@ -329,6 +329,7 @@ declare module '@micro-app/types' {
     'disable-memory-router'?: boolean
     'disable-patch-request'?: boolean
     'keep-router-state'?: boolean
+    'keep-state-override-default'?: boolean
     'hidden-router'?: boolean
     'keep-alive'?: boolean
     'clear-data'?: boolean
