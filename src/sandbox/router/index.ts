@@ -81,7 +81,7 @@ export function updateBrowserURLWithLocation (
   defaultPage?: string,
 ): void {
   // update microLocation with defaultPage
-  if (defaultPage) updateMicroLocation(appName, defaultPage, microLocation, 'prevent')
+  if (defaultPage && !microLocation.self?.isReload) updateMicroLocation(appName, defaultPage, microLocation, 'prevent')
   // attach microApp route info to browser URL
   attachRouteToBrowserURL(
     appName,
