@@ -102,8 +102,7 @@ export function defineElement(tagName: string): void {
         }
         this.addEventListener(lifeCycles.MOUNTED, handleAfterReload)
         this.addEventListener(lifeCycles.AFTERSHOW, handleAfterReload)
-         const keepRouteState = this.getDisposeResult('keep-state-override-default')
-          // TODO
+        const keepRouteState = this.getDisposeResult('state-override-default')
         const app = appInstanceMap.get(this.appName)
         if (app?.sandBox.microAppWindow.location?.self && keepRouteState) {
           app.sandBox.microAppWindow.location.self.isReload = true
