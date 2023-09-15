@@ -17,7 +17,7 @@ import {
   setMicroState,
   getMicroState,
   getMicroPathFromURL,
-  isMemoryRouterEnabled,
+  isRouterModeCustom,
 } from './core'
 import {
   logError,
@@ -128,9 +128,8 @@ function createRouterApi (): RouterApi {
              *  两者选一个吧，如果选2，则下面这两行代码可以去掉
              *  要不这样吧，history和search模式采用2，这样可以解决vue3的问题，custom采用1，避免vue循环刷新的问题，这样在用户出现问题时各有解决方案。但反过来说，每种方案又分别导致另外的问题，不统一，导致复杂度增高
              *  如果关闭虚拟路由，同时发送popstate事件还是无法解决vue3的问题(毕竟history.state理论上还是会冲突)，那么就没必要发送popstate事件了。
-             * 。。。。先这样吧
              */
-            if (!isMemoryRouterEnabled(appName)) {
+            if (isRouterModeCustom(appName)) {
               updateMicroLocationWithEvent(appName, targetFullPath)
             }
           }
@@ -228,11 +227,12 @@ function createRouterApi (): RouterApi {
 
   /**
    * NOTE:
-   * 1. sandbox not open
-   * 2. useMemoryRouter is false
+   * 1. app not exits
+   * 2. sandbox is disabled
+   * 3. router mode is custom
    */
   function commonHandlerForAttachToURL (appName: string): void {
-    if (isMemoryRouterEnabled(appName)) {
+    if (!isRouterModeCustom(appName)) {
       const app = appInstanceMap.get(appName)!
       attachRouteToBrowserURL(
         appName,

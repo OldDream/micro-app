@@ -8,7 +8,6 @@ import type {
   plugins,
 } from '@micro-app/types'
 import globalEnv from '../../libs/global_env'
-import bindFunctionToRawTarget from '../bind_function'
 import microApp from '../../micro_app'
 import {
   getEffectivePath,
@@ -27,7 +26,7 @@ import {
   resetDataCenterSnapshot,
 } from '../../interact'
 import {
-  patchIframeRoute,
+  patchRoute,
 } from './route'
 import {
   router,
@@ -40,20 +39,17 @@ import {
   releasePatchHistory,
 } from '../router'
 import {
-  globalPropertyList,
-} from './special_key'
-import {
   patchElementAndDocument,
   releasePatchElementAndDocument,
 } from '../../source/patch'
 import {
-  patchIframeWindow,
+  patchWindow,
 } from './window'
 import {
-  patchIframeDocument,
+  patchDocument,
 } from './document'
 import {
-  patchIframeElement,
+  patchElement,
 } from './element'
 import {
   patchElementTree
@@ -66,9 +62,9 @@ export default class IframeSandbox {
   private documentEffect!: CommonEffectHook
   private removeHistoryListener!: CallableFunction
   // Properties that can be escape to rawWindow
-  private escapeProperties: PropertyKey[] = []
+  public escapeProperties: PropertyKey[] = []
   // Properties escape to rawWindow, cleared when unmount
-  private escapeKeys = new Set<PropertyKey>()
+  public escapeKeys = new Set<PropertyKey>()
   public deleteIframeElement: () => void
   public iframe!: HTMLIFrameElement | null
   public sandboxReady!: Promise<void>
@@ -92,23 +88,21 @@ export default class IframeSandbox {
       this.createIframeTemplate(this.microAppWindow)
       // get escapeProperties from plugins
       this.getSpecialProperties(appName)
-      // rewrite location & history of child app
-      this.proxyLocation = patchIframeRoute(appName, url, this.microAppWindow, browserHost)
-      // create proxy window
-      this.proxyWindow = this.createProxyWindow(this.microAppWindow)
+      // patch location & history of child app
+      this.proxyLocation = patchRoute(appName, url, this.microAppWindow, browserHost)
+      // patch window of child app
+      this.windowEffect = patchWindow(appName, this.microAppWindow, this)
+      // patch document of child app
+      this.documentEffect = patchDocument(appName, this.microAppWindow, this)
+      // patch Node & Element of child app
+      patchElement(appName, url, this.microAppWindow, this)
       /**
        * create static properties
        * NOTE:
        *  1. execute as early as possible
-       *  2. run after patchIframeRoute & createProxyWindow
+       *  2. run after patchRoute & createProxyWindow
        */
       this.initStaticGlobalKeys(appName, url)
-      // rewrite window of child app
-      this.windowEffect = patchIframeWindow(appName, this.microAppWindow)
-      // rewrite document of child app
-      this.documentEffect = patchIframeDocument(appName, this.microAppWindow, this.proxyLocation)
-      // rewrite Node & Element of child app
-      patchIframeElement(appName, url, this.microAppWindow, this)
       resolve()
     })
   }
@@ -153,12 +147,12 @@ export default class IframeSandbox {
 
   public start ({
     baseroute,
-    useMemoryRouter,
     defaultPage,
     disablePatchRequest,
   }: SandBoxStartParams): void {
     if (this.active) return
     this.active = true
+    /* --- memory router part --- start */
     /**
      * Sync router info to iframe when exec sandbox.start with disable or enable memory-router
      * e.g.:
@@ -170,13 +164,12 @@ export default class IframeSandbox {
      */
     /**
      * TODO:
-     * 做一些记录：
      * 1. iframe关闭虚拟路由系统后，default-page无法使用，推荐用户直接使用浏览器地址控制首页渲染
      *    补充：keep-router-state 也无法配置，因为keep-router-state一定为true。
      * 2. 导航拦截、current.route 可以正常使用
      * 3. 可以正常控制子应用跳转，方式还是自上而下(也可以是子应用内部跳转，这种方式更好一点，减小对基座的影响，不会导致vue的循环刷新)
      * 4. 关闭虚拟路由以后会对应 route-mode='custom' 模式，包括with沙箱也会这么做
-     * 5. 关闭虚拟路由是指尽可能模式没有虚拟路由的情况，子应用直接获取浏览器location和history，控制浏览器跳转
+     * 5. 关闭虚拟路由是指尽可能模拟没有虚拟路由的情况，子应用直接获取浏览器location和history，控制浏览器跳转
      */
     this.initRouteState(defaultPage)
 
@@ -185,9 +178,8 @@ export default class IframeSandbox {
       this.microAppWindow.__MICRO_APP_NAME__,
     )
 
-    if (!useMemoryRouter) {
-      this.microAppWindow.__MICRO_APP_BASE_ROUTE__ = this.microAppWindow.__MICRO_APP_BASE_URL__ = baseroute
-    }
+    this.microAppWindow.__MICRO_APP_BASE_ROUTE__ = this.microAppWindow.__MICRO_APP_BASE_URL__ = baseroute
+    /* --- memory router part --- end */
 
     /**
      * create base element to iframe
@@ -212,16 +204,17 @@ export default class IframeSandbox {
     keepRouteState,
     destroy,
     clearData,
-    useMemoryRouter,
   }: SandBoxStopParams): void {
     if (!this.active) return
     this.recordAndReleaseEffect({ clearData }, !umdMode || destroy)
 
-    // if keep-route-state is true or disable memory-router, preserve microLocation state
-    this.clearRouteState(keepRouteState || !useMemoryRouter)
+    /* --- memory router part --- start */
+    // if keep-route-state is true, preserve microLocation state
+    this.clearRouteState(keepRouteState)
 
     // release listener of popstate for child app
     this.removeHistoryListener?.()
+    /* --- memory router part --- end */
 
     if (!umdMode || destroy) {
       this.deleteIframeElement()
@@ -238,7 +231,7 @@ export default class IframeSandbox {
     }
 
     if (--IframeSandbox.activeCount === 0) {
-      // TODO: 有什么是可以放在这里的吗
+      // TODO: Is there anything to put here?
     }
 
     this.active = false
@@ -248,7 +241,7 @@ export default class IframeSandbox {
    * create static properties
    * NOTE:
    *  1. execute as early as possible
-   *  2. run after patchIframeRoute & createProxyWindow
+   *  2. run after patchRoute & createProxyWindow
    */
   private initStaticGlobalKeys (appName: string, url: string): void {
     this.microAppWindow.__MICRO_APP_ENVIRONMENT__ = true
@@ -412,60 +405,6 @@ export default class IframeSandbox {
   // TODO: 初始化和每次跳转时都要更新base的href
   public updateIframeBase = (): void => {
     this.baseElement?.setAttribute('href', this.proxyLocation.protocol + '//' + this.proxyLocation.host + this.proxyLocation.pathname)
-  }
-
-  private createProxyWindow (microAppWindow: microAppWindowType): void {
-    const rawWindow = globalEnv.rawWindow
-    const customProperties: PropertyKey[] = []
-
-    return new Proxy(microAppWindow, {
-      get: (target: microAppWindowType, key: PropertyKey): unknown => {
-        if (key === 'location') {
-          return this.proxyLocation
-        }
-
-        if (globalPropertyList.includes(key.toString())) {
-          return this.proxyWindow
-        }
-
-        if (customProperties.includes(key)) {
-          return Reflect.get(target, key)
-        }
-
-        return bindFunctionToRawTarget(Reflect.get(target, key), target)
-      },
-      set: (target: microAppWindowType, key: PropertyKey, value: unknown): boolean => {
-        /**
-         * TODO:
-         * 1、location域名相同，子应用内部跳转时的处理
-         * 2、和with沙箱的变量相同，提取成公共数组
-         */
-        if (key === 'location') {
-          return Reflect.set(rawWindow, key, value)
-        }
-
-        if (!Reflect.has(target, key)) {
-          customProperties.push(key)
-        }
-
-        Reflect.set(target, key, value)
-
-        if (this.escapeProperties.includes(key)) {
-          !Reflect.has(rawWindow, key) && this.escapeKeys.add(key)
-          Reflect.set(rawWindow, key, value)
-        }
-
-        return true
-      },
-      has: (target: microAppWindowType, key: PropertyKey) => key in target,
-      deleteProperty: (target: microAppWindowType, key: PropertyKey): boolean => {
-        if (Reflect.has(target, key)) {
-          this.escapeKeys.has(key) && Reflect.deleteProperty(rawWindow, key)
-          return Reflect.deleteProperty(target, key)
-        }
-        return true
-      },
-    })
   }
 
   /**

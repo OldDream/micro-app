@@ -8,13 +8,44 @@
 
 ---
 
+### 1.0.0-beta.6
+
+`2023-09-14`
+
+- **New**
+
+  - 🆕 新增了虚拟路由多种模式功能，新增了三种路由模式：`search`、`history`、`custom`。
+  - 🆕 新增了在预渲染时可以选择不同路由模式进行渲染的功能。
+  - 🆕 新增了全局变量`document.microAppElement`，用于获取子应用所在的`micro-app`元素。
+  
+- **Bug Fix**
+
+  - 🐞 修复了在with沙箱下子应用使用`vuedraggable`报错的问题。
+  - 🐞 修复了在iframe沙箱下子应用定义`onpopstate`、`onhashchange`会覆盖主应用方法的问题。
+  - 🐞 修复了`window.addEventListener`绑定非window对象时表现异常的问题。
+  - 🐞 修复了`document.addEventListener`绑定非document对象时表现异常的问题。
+  - 🐞 修复了在子应用初始化后`icon link`丢失的问题。
+  - 🐞 修复了通过`rawDocument`、`rawWindow`操作元素时，元素作用域绑定异常的问题。
+  - 🐞 修复了通过`document.querySelector(":root")`无法获取根元素的问题。
+
+- **Update**
+
+  - 🚀 删除了配置项`disable-memory-router`，虚拟路由不再支持关闭功能。
+  - 🚀 优化了with沙箱中特殊事件的处理方式，`onpopstate`、`onhashchange`等方法不再绑定到原生window。
+  - 🚀 优化了沙箱的架构设计及代码。
+  - 🚀 完成了部分1.0版本单元测试的功能。
+  - 🚀 更新了官网文档。
+
+
 ### 1.0.0-beta.5
 
-`2023-05-25`
+`2023-05-23`
 
 - **Bug Fix**
 
   - 🐞 修复了环境变量`__MICRO_APP_BASE_APPLICATION__`为undefined的问题。
+  - 🐞 修复了`vite+react`子应用接入失败的问题。
+  - 🐞 修复了通过修改name和url渲染`keep-alive`应用失败的问题。
 
 - **Update**
 

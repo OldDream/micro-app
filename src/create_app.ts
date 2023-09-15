@@ -17,6 +17,8 @@ import {
   lifeCycles,
   keepAliveStates,
   microGlobalEvent,
+  DEFAULT_ROUTER_MODE,
+  ROUTER_MODE_CUSTOM,
 } from './constants'
 import {
   isFunction,
@@ -52,6 +54,7 @@ export interface CreateAppParam {
   ssrUrl?: string
   isPrefetch?: boolean
   prefetchLevel?: number
+  routerMode?: string
 }
 
 export default class CreateApp implements AppInterface {
@@ -64,7 +67,7 @@ export default class CreateApp implements AppInterface {
   public umdMode = false
   public source: sourceType
   // TODO: 类型优化，加上iframe沙箱
-  public sandBox: WithSandBoxInterface | null = null
+  public sandBox: WithSandBoxInterface | IframeSandbox | null = null
   public name: string
   public url: string
   public container: HTMLElement | ShadowRoot | null
@@ -77,7 +80,7 @@ export default class CreateApp implements AppInterface {
   public isPrerender: boolean
   public prefetchLevel?: number
   public fiber = false
-  public useMemoryRouter = true
+  public routerMode: string = DEFAULT_ROUTER_MODE
 
   constructor ({
     name,
@@ -127,18 +130,14 @@ export default class CreateApp implements AppInterface {
     html: HTMLElement,
     defaultPage?: string,
     disablePatchRequest?: boolean,
+    routerMode?: string,
+    baseroute?: string,
   ): void {
     if (++this.loadSourceLevel === 2) {
       this.source.html = html
 
       if (!this.isPrefetch && !this.isUnmounted()) {
         getRootContainer(this.container!).mount(this)
-        // Abandonment plan
-        // if (this.isHidden()) {
-        //   getRootContainer(this.container!).unmount()
-        // } else if (!this.isUnmounted()) {
-        //   getRootContainer(this.container!).mount(this)
-        // }
       } else if (this.isPrerender) {
         /**
          * PreRender is an option of prefetch, it will render app during prefetch
@@ -163,10 +162,10 @@ export default class CreateApp implements AppInterface {
         this.mount({
           container,
           inline: this.inline,
-          useMemoryRouter: true,
-          baseroute: '',
+          routerMode: routerMode!,
+          baseroute: baseroute || '',
           fiber: true,
-          defaultPage: defaultPage ?? '',
+          defaultPage: defaultPage || '',
           disablePatchRequest: disablePatchRequest ?? false,
         })
       }
@@ -190,7 +189,7 @@ export default class CreateApp implements AppInterface {
    * mount app
    * @param container app container
    * @param inline run js in inline mode
-   * @param useMemoryRouter use virtual router
+   * @param routerMode virtual router mode
    * @param defaultPage default page of virtual router
    * @param baseroute route prefix, default is ''
    * @param disablePatchRequest prevent rewrite request method of child app
@@ -199,12 +198,11 @@ export default class CreateApp implements AppInterface {
   public mount ({
     container,
     inline,
-    useMemoryRouter,
+    routerMode,
     defaultPage,
     baseroute,
     disablePatchRequest,
     fiber,
-    // hiddenRouter,
   }: MountParam): void {
     if (this.loadSourceLevel !== 2) {
       /**
@@ -217,8 +215,7 @@ export default class CreateApp implements AppInterface {
       // mount before prerender exec mount (loading source), set isPrerender to false
       this.isPrerender = false
       // reset app state to LOADING
-      this.setAppState(appStates.LOADING)
-      return
+      return this.setAppState(appStates.LOADING)
     }
 
     this.createSandbox()
@@ -265,9 +262,7 @@ export default class CreateApp implements AppInterface {
         this.container = container
         this.inline = inline
         this.fiber = fiber
-        // use in sandbox/effect
-        this.useMemoryRouter = useMemoryRouter
-        // this.hiddenRouter = hiddenRouter ?? this.hiddenRouter
+        this.routerMode = routerMode
 
         const dispatchBeforeMount = () => dispatchLifecyclesEvent(
           this.container!,
@@ -288,7 +283,6 @@ export default class CreateApp implements AppInterface {
         this.sandBox?.start({
           umdMode: this.umdMode,
           baseroute,
-          useMemoryRouter,
           defaultPage,
           disablePatchRequest,
         })
@@ -503,7 +497,6 @@ export default class CreateApp implements AppInterface {
       keepRouteState: keepRouteState && !destroy,
       destroy,
       clearData: clearData || destroy,
-      useMemoryRouter: this.useMemoryRouter,
     })
 
     // dispatch unmount event to base app
@@ -556,22 +549,25 @@ export default class CreateApp implements AppInterface {
       lifeCycles.AFTERHIDDEN,
     )
 
-    if (this.useMemoryRouter) {
+    if (this.routerMode !== ROUTER_MODE_CUSTOM) {
       // called after lifeCyclesEvent
       this.sandBox?.removeRouteInfoForKeepAliveApp()
     }
 
     /**
-     * TODO: 果然不行，遇到bug了，因为micro-app被隐藏还有另外一种情况，通过修改url和name
-     * micro-app元素没有被删除，而新的应用开始使用micro-app元素，两者同用一个元素，肯定会出问题
+     * Hidden app before the resources are loaded, then unmount the app
      */
-    this.container = cloneContainer(
-      pureCreateElement('micro-app'),
-      this.container as Element,
-      false,
-    )
+    if (this.loadSourceLevel !== 2) {
+      getRootContainer(this.container!).unmount()
+    } else {
+      this.container = cloneContainer(
+        pureCreateElement('div'),
+        this.container as Element,
+        false,
+      )
 
-    this.sandBox?.recordAndReleaseEffect({ keepAlive: true })
+      this.sandBox?.recordAndReleaseEffect({ keepAlive: true })
+    }
 
     callback?.()
   }
@@ -602,11 +598,10 @@ export default class CreateApp implements AppInterface {
 
     /**
      * TODO:
-     * 1. iframe沙箱在关闭虚拟路由系统时，重新展示时不更新浏览器地址，这样和with沙箱保持一致。
-     *    但是iframe是可以做到重新展示时更新浏览器地址的，这里临时不支持，等待后续with沙箱也支持的时候再优化
-     *    只需要去除 if (this.useMemoryRouter) 的判断即可
+     *  问题：当路由模式为custom时，keep-alive应用在重新展示，是否需要根据子应用location信息更新浏览器地址？
+     *  暂时不这么做吧，因为无法确定二次展示时新旧地址是否相同，是否带有特殊信息
      */
-    if (this.useMemoryRouter) {
+    if (this.routerMode !== ROUTER_MODE_CUSTOM) {
       // called before lifeCyclesEvent
       this.sandBox?.setRouteInfoForKeepAliveApp()
     }

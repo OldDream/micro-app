@@ -3,69 +3,65 @@ import type {
   CommonEffectHook,
   MicroEventListener,
   WithSandBoxInterface,
+  microAppWindowType,
 } from '@micro-app/types'
 import globalEnv from '../../libs/global_env'
 import bindFunctionToRawTarget from '../bind_function'
 import {
   throttleDeferForSetAppName,
   isFunction,
+  rawDefineProperties,
 } from '../../libs/utils'
 import {
   throttleDeferForParentNode,
 } from '../adapter'
+import {
+  appInstanceMap,
+} from '../../create_app'
 
-function createMicroDocument (appName: string, proxyDocument: Document): Function {
-  const { rawDocument, rawRootDocument } = globalEnv
-
-  class MicroDocument {
-    static [Symbol.hasInstance] (target: unknown) {
-      let proto = target
-      while (proto = Object.getPrototypeOf(proto)) {
-        if (proto === MicroDocument.prototype) {
-          return true
-        }
-      }
-      return (
-        target === proxyDocument ||
-        target instanceof rawRootDocument
-      )
-    }
-  }
-
-  /**
-   * TIP:
-   * 1. child class __proto__, which represents the inherit of the constructor, always points to the parent class
-   * 2. child class prototype.__proto__, which represents the inherit of methods, always points to parent class prototype
-   * e.g.
-   * class B extends A {}
-   * B.__proto__ === A // true
-   * B.prototype.__proto__ === A.prototype // true
-   */
-  Object.setPrototypeOf(MicroDocument, rawRootDocument)
-  // Object.create(rawRootDocument.prototype) will cause MicroDocument and proxyDocument methods not same when exec Document.prototype.xxx = xxx in child app
-  Object.setPrototypeOf(MicroDocument.prototype, new Proxy(rawRootDocument.prototype, {
-    get (target: Document, key: PropertyKey): unknown {
-      throttleDeferForSetAppName(appName)
-      return bindFunctionToRawTarget<Document>(Reflect.get(target, key), rawDocument, 'DOCUMENT')
+/**
+ * create proxyDocument and MicroDocument, rewrite document of child app
+ * @param appName app name
+ * @param microAppWindow Proxy target
+ * @returns EffectHook
+ */
+export function patchDocument (
+  appName: string,
+  microAppWindow: microAppWindowType,
+  sandbox: WithSandBoxInterface,
+): CommonEffectHook {
+  const { proxyDocument, documentEffect } = createProxyDocument(appName, sandbox)
+  const MicroDocument = createMicroDocument(appName, proxyDocument)
+  rawDefineProperties(microAppWindow, {
+    document: {
+      configurable: false,
+      enumerable: true,
+      get () {
+        // return globalEnv.rawDocument
+        return proxyDocument
+      },
     },
-    set (target: Document, key: PropertyKey, value: unknown): boolean {
-      Reflect.set(target, key, value)
-      return true
+    Document: {
+      configurable: false,
+      enumerable: false,
+      get () {
+        // return globalEnv.rawRootDocument
+        return MicroDocument
+      },
     }
-  }))
+  })
 
-  return MicroDocument
+  return documentEffect
 }
 
 /**
  * Create new document and Document
  */
-export function createProxyDocument (
+function createProxyDocument (
   appName: string,
   sandbox: WithSandBoxInterface,
 ): {
     proxyDocument: Document,
-    MicroDocument: Function,
     documentEffect: CommonEffectHook,
   } {
   const eventListenerMap = new Map<string, Set<MicroEventListener>>()
@@ -89,6 +85,7 @@ export function createProxyDocument (
    * TODO:
    *  1. listener 是否需要绑定proxyDocument，否则函数中的this指向原生window
    *  2. 相似代码提取为公共方法(with, iframe)
+   *  3. 如果this不指向proxyDocument 和 rawDocument，则需要特殊处理
    */
   function addEventListener (
     type: string,
@@ -193,6 +190,7 @@ export function createProxyDocument (
       if (key === 'onclick') return onClickHandler
       if (key === 'addEventListener') return addEventListener
       if (key === 'removeEventListener') return removeEventListener
+      if (key === 'microAppElement') return appInstanceMap.get(appName)?.container
       return bindFunctionToRawTarget<Document>(Reflect.get(target, key), rawDocument, 'DOCUMENT')
     },
     set: (target: Document, key: PropertyKey, value: unknown): boolean => {
@@ -205,7 +203,7 @@ export function createProxyDocument (
           rawAddEventListener.call(rawDocument, 'click', value, false)
         }
         onClickHandler = value
-      } else {
+      } else if (key !== 'microAppElement') {
         /**
          * 1. Fix TypeError: Illegal invocation when set document.title
          * 2. If the set method returns false, and the assignment happened in strict-mode code, a TypeError will be thrown.
@@ -218,10 +216,6 @@ export function createProxyDocument (
 
   return {
     proxyDocument,
-    MicroDocument: createMicroDocument(
-      appName,
-      proxyDocument,
-    ),
     documentEffect: {
       reset,
       record,
@@ -229,4 +223,53 @@ export function createProxyDocument (
       release,
     }
   }
+}
+
+/**
+ * create proto Document
+ * @param appName app name
+ * @param proxyDocument proxy(document)
+ * @returns Document
+ */
+function createMicroDocument (appName: string, proxyDocument: Document): Function {
+  const { rawDocument, rawRootDocument } = globalEnv
+
+  class MicroDocument {
+    static [Symbol.hasInstance] (target: unknown) {
+      let proto = target
+      while (proto = Object.getPrototypeOf(proto)) {
+        if (proto === MicroDocument.prototype) {
+          return true
+        }
+      }
+      return (
+        target === proxyDocument ||
+        target instanceof rawRootDocument
+      )
+    }
+  }
+
+  /**
+   * TIP:
+   * 1. child class __proto__, which represents the inherit of the constructor, always points to the parent class
+   * 2. child class prototype.__proto__, which represents the inherit of methods, always points to parent class prototype
+   * e.g.
+   * class B extends A {}
+   * B.__proto__ === A // true
+   * B.prototype.__proto__ === A.prototype // true
+   */
+  Object.setPrototypeOf(MicroDocument, rawRootDocument)
+  // Object.create(rawRootDocument.prototype) will cause MicroDocument and proxyDocument methods not same when exec Document.prototype.xxx = xxx in child app
+  Object.setPrototypeOf(MicroDocument.prototype, new Proxy(rawRootDocument.prototype, {
+    get (target: Document, key: PropertyKey): unknown {
+      throttleDeferForSetAppName(appName)
+      return bindFunctionToRawTarget<Document>(Reflect.get(target, key), rawDocument, 'DOCUMENT')
+    },
+    set (target: Document, key: PropertyKey, value: unknown): boolean {
+      Reflect.set(target, key, value)
+      return true
+    }
+  }))
+
+  return MicroDocument
 }
