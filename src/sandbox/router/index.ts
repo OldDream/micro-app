@@ -57,7 +57,7 @@ export {
  * @param url app url
  * @returns MicroRouter
  */
-export function createMicroRouter(appName: string, url: string): MicroRouter {
+export function createMicroRouter (appName: string, url: string): MicroRouter {
   const microLocation = createMicroLocation(appName, url)
   return {
     microLocation,
@@ -71,7 +71,7 @@ export function createMicroRouter(appName: string, url: string): MicroRouter {
  * @param microLocation MicroLocation for sandbox
  * @param defaultPage default page
  */
-export function initRouteStateWithURL(
+export function initRouteStateWithURL (
   appName: string,
   microLocation: MicroLocation,
   defaultPage?: string,
@@ -90,7 +90,7 @@ export function initRouteStateWithURL(
  *  1. sandbox.start
  *  2. reshow of keep-alive app
  */
-export function updateBrowserURLWithLocation(
+export function updateBrowserURLWithLocation (
   appName: string,
   microLocation: MicroLocation,
   defaultPage?: string,
@@ -120,7 +120,7 @@ export function updateBrowserURLWithLocation(
  * @param microLocation location of microApp
  * @param keepRouteState keep-router-state is only used to control whether to clear the location of microApp, default is false
  */
-export function clearRouteStateFromURL(
+export function clearRouteStateFromURL (
   appName: string,
   url: string,
   microLocation: MicroLocation,
@@ -141,7 +141,7 @@ export function clearRouteStateFromURL(
  * remove microState from history.state and remove microPath from browserURL
  * called on sandbox.stop or hidden of keep-alive app
  */
-export function removePathFromBrowser(appName: string): void {
+export function removePathFromBrowser (appName: string): void {
   attachRouteToBrowserURL(
     appName,
     removeMicroPathFromURL(appName),

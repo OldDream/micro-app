@@ -355,6 +355,7 @@ declare module '@micro-app/types' {
   // MicroApp config
   interface MicroAppBaseType {
     tagName: string
+    hasInit: boolean
     options: OptionsType
     preFetch(apps: prefetchParamList): void
     router: Router // eslint-disable-line
