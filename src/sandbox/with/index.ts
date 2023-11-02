@@ -196,7 +196,10 @@ export default class WithSandBox implements WithSandBoxInterface {
 
     /* --- memory router part --- start */
     // rest url and state of browser
-    this.clearRouteState(keepRouteState)
+    const location2 = this.microAppWindow.location as MicroLocation
+    if (!location2.self?.isReload) {
+      this.clearRouteState(keepRouteState)
+    }
 
     // release listener of popstate for child app
     this.removeHistoryListener?.()
