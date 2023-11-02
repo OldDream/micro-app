@@ -111,10 +111,14 @@ export function defineElement (tagName: string): void {
         this.addEventListener(lifeCycles.AFTERSHOW, handleAfterReload)
         const keepRouteState = this.getDisposeResult('state-override-default')
         const app = appInstanceMap.get(this.appName)
+        const oldURLHash = globalEnv.rawWindow.location.hash
         if (app?.sandBox.microAppWindow.location?.self && keepRouteState) {
           app.sandBox.microAppWindow.location.self.isReload = true
         }
         this.handleDisconnected(destroy, () => {
+          if (app?.sandBox.microAppWindow.location?.self && keepRouteState) {
+            globalEnv.rawWindow.location.hash = oldURLHash
+          }
           this.handleConnected()
         })
       })
