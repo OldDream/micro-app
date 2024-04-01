@@ -21,6 +21,8 @@ import {
   CompletionPath,
   createURL,
   isPlainObject,
+  getEffectivePath,
+  getBaseHTMLElement,
 } from './libs/utils'
 import {
   ObservedAttrName,
@@ -33,15 +35,15 @@ import CreateApp, {
 import {
   router,
   getNoHashMicroPathFromURL,
-  getRouterMode,
+  initRouterMode,
 } from './sandbox/router'
 
 /**
  * define element
  * @param tagName element name
- */
+*/
 export function defineElement (tagName: string): void {
-  class MicroAppElement extends HTMLElement implements MicroAppElementType {
+  class MicroAppElement extends getBaseHTMLElement() implements MicroAppElementType {
     static get observedAttributes (): string[] {
       return ['name', 'url']
     }
@@ -109,16 +111,7 @@ export function defineElement (tagName: string): void {
         }
         this.addEventListener(lifeCycles.MOUNTED, handleAfterReload)
         this.addEventListener(lifeCycles.AFTERSHOW, handleAfterReload)
-        const keepRouteState = this.getDisposeResult('state-override-default')
-        const app = appInstanceMap.get(this.appName)
-        const oldURLHash = globalEnv.rawWindow.location.hash
-        if (app?.sandBox.microAppWindow.location?.self && keepRouteState) {
-          app.sandBox.microAppWindow.location.self.isReload = true
-        }
         this.handleDisconnected(destroy, () => {
-          if (app?.sandBox.microAppWindow.location?.self && keepRouteState) {
-            globalEnv.rawWindow.location.hash = oldURLHash
-          }
           this.handleConnected()
         })
       })
@@ -203,7 +196,6 @@ export function defineElement (tagName: string): void {
       }
 
       this.updateSsrUrl(this.appUrl)
-
       if (appInstanceMap.has(this.appName)) {
         const oldApp = appInstanceMap.get(this.appName)!
         const oldAppUrl = oldApp.ssrUrl || oldApp.url
@@ -234,11 +226,11 @@ export function defineElement (tagName: string): void {
             /**
              * url is different & old app is unmounted or prefetch, create new app to replace old one
              */
-            logWarn(`the ${oldApp.isPrefetch ? 'prefetch' : 'unmounted'} app with url: ${oldAppUrl} replaced by a new app with url: ${targetUrl}`, this.appName)
+            logWarn(`the ${oldApp.isPrefetch ? 'prefetch' : 'unmounted'} app with url ${oldAppUrl} replaced by a new app with url ${targetUrl}`, this.appName)
           }
           this.handleCreateApp()
         } else {
-          logError(`app name conflict, an app named: ${this.appName} with url: ${oldAppUrl} is running`)
+          logError(`app name conflict, an app named ${this.appName} with url ${oldAppUrl} is running`)
         }
       } else {
         this.handleCreateApp()
@@ -296,7 +288,7 @@ export function defineElement (tagName: string): void {
 
       this.appName = formatAttrName
       this.appUrl = formatAttrUrl
-      ; (this.shadowRoot ?? this).innerHTML = ''
+      ;(this.shadowRoot ?? this).innerHTML = ''
       if (formatAttrName !== this.getAttribute('name')) {
         this.setAttribute('name', this.appName)
       }
@@ -317,18 +309,18 @@ export function defineElement (tagName: string): void {
             // the hidden keep-alive app is still active
             logError(`app name conflict, an app named ${this.appName} is running`)
           }
-          /**
-           * TODO:
-           *  1. oldApp必是unmountApp或preFetchApp，这里还应该考虑沙箱、iframe、样式隔离不一致的情况
-           *  2. unmountApp要不要判断样式隔离、沙箱、iframe，然后彻底删除并再次渲染？(包括handleConnected里的处理，先不改？)
-           * 推荐：if (
-           *  oldApp.url === this.appUrl &&
-           *  oldApp.ssrUrl === this.ssrUrl && (
-           *    oldApp.isUnmounted() ||
-           *    (oldApp.isPrefetch && this.sameCoreOptions(oldApp))
-           *  )
-           * )
-           */
+        /**
+         * TODO:
+         *  1. oldApp必是unmountApp或preFetchApp，这里还应该考虑沙箱、iframe、样式隔离不一致的情况
+         *  2. unmountApp要不要判断样式隔离、沙箱、iframe，然后彻底删除并再次渲染？(包括handleConnected里的处理，先不改？)
+         * 推荐：if (
+         *  oldApp.url === this.appUrl &&
+         *  oldApp.ssrUrl === this.ssrUrl && (
+         *    oldApp.isUnmounted() ||
+         *    (oldApp.isPrefetch && this.sameCoreOptions(oldApp))
+         *  )
+         * )
+         */
         } else if (oldApp.url === this.appUrl && oldApp.ssrUrl === this.ssrUrl) {
           // mount app
           this.handleMount(oldApp)
@@ -348,7 +340,6 @@ export function defineElement (tagName: string): void {
     private legalAttribute (name: string, val: AttrType): boolean {
       if (!isString(val) || !val) {
         logError(`unexpected attribute ${name}, please check again`, this.appName)
-
         return false
       }
 
@@ -458,7 +449,7 @@ export function defineElement (tagName: string): void {
      * Global setting is lowest priority
      * @param name Configuration item name
      */
-    public getDisposeResult <T extends keyof OptionsType> (name: T): boolean {
+    private getDisposeResult <T extends keyof OptionsType> (name: T): boolean {
       return (this.compatibleProperties(name) || !!microApp.options[name]) && this.compatibleDisableProperties(name)
     }
 
@@ -533,6 +524,7 @@ export function defineElement (tagName: string): void {
           this.ssrUrl = CompletionPath(rawLocation.pathname + rawLocation.search, baseUrl)
         } else {
           // get path from browser URL
+          // TODO: 新版本路由系统要重新兼容ssr
           let targetPath = getNoHashMicroPathFromURL(this.appName, baseUrl)
           const defaultPagePath = this.getDefaultPage()
           if (!targetPath && defaultPagePath) {
@@ -563,7 +555,12 @@ export function defineElement (tagName: string): void {
      * @returns router-mode
      */
     private getMemoryRouterMode () : string {
-      return getRouterMode(this.getAttribute('router-mode'), this)
+      return initRouterMode(
+        this.getAttribute('router-mode'),
+        // is micro-app element set disable-memory-router, like <micro-app disable-memory-router></micro-app>
+        // or <micro-app disable-memory-router='false'></micro-app>
+        this.compatibleProperties('disable-memory-router') && this.compatibleDisableProperties('disable-memory-router'),
+      )
     }
 
     /**
@@ -610,6 +607,20 @@ export function defineElement (tagName: string): void {
         return this.cacheData
       }
       return null
+    }
+
+    /**
+     * get publicPath from a valid address,it can used in micro-app-devtools
+     */
+    get publicPath (): string {
+      return getEffectivePath(this.appUrl)
+    }
+
+    /**
+     * get baseRoute from attribute,it can used in micro-app-devtools
+     */
+    get baseRoute (): string {
+      return this.getBaseRouteCompatible()
     }
   }
 

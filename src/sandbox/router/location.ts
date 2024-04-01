@@ -16,6 +16,8 @@ import {
   isEffectiveApp,
   getMicroState,
   isRouterModeCustom,
+  isRouterModeNative,
+  isRouterModeSearch,
 } from './core'
 import {
   dispatchNativeEvent,
@@ -32,8 +34,8 @@ import {
   isIframeSandbox,
 } from '../../create_app'
 import {
-  hijackMicroLocationKeys,
-} from '../iframe/special_key'
+  HIJACK_LOCATION_KEYS,
+} from '../../constants'
 
 // origin is readonly, so we ignore when updateMicroLocation
 const locationKeys: ReadonlyArray<keyof MicroLocation> = ['href', 'pathname', 'search', 'hash', 'host', 'hostname', 'port', 'protocol', 'search']
@@ -88,7 +90,7 @@ export function createMicroLocation (
     if (targetLocation.origin === proxyLocation.origin) {
       const setMicroPathResult = setMicroPathToURL(appName, targetLocation)
       // if disable memory-router, navigate directly through rawLocation
-      if (!isRouterModeCustom(appName)) {
+      if (isRouterModeSearch(appName)) {
         /**
          * change hash with location.href will not trigger the browser reload
          * so we use pushState & reload to imitate href behavior
@@ -184,22 +186,38 @@ export function createMicroLocation (
   const proxyLocation = new Proxy({} as Location, {
     get: (_: Location, key: string): unknown => {
       const target = getTarget()
-      if (isIframe) {
-        // host hostname port protocol
-        if (hijackMicroLocationKeys.includes(key)) {
-          return childStaticLocation![key]
-        }
-
-        if (key === 'href') {
-          // do not use target, because target may be deleted
-          return target[key].replace(browserHost!, childHost!)
-        }
-      }
 
       if (key === 'assign') return assign
       if (key === 'replace') return replace
       if (key === 'reload') return reload
       if (key === 'self') return target
+      if (key === 'fullPath') return target.fullPath
+
+      /**
+       * Special keys: host, hostname, port, protocol, origin, href
+       * NOTE:
+       *  1. In native mode this keys point to browser, in other mode this keys point to child app origin
+       *  2. In iframe sandbox, iframe.src is base app address, so origin points to the browser by default, we need to replace it with child app origin
+       *  3. In other modes, origin points to child app
+       */
+      if (HIJACK_LOCATION_KEYS.includes(key)) {
+        if (isRouterModeNative(appName)) {
+          return rawLocation[key]
+        }
+        if (isIframe) {
+          return childStaticLocation![key]
+        }
+      }
+
+      if (key === 'href') {
+        if (isRouterModeNative(appName)) {
+          return target[key].replace(target.origin, rawLocation.origin)
+        }
+        if (isIframe) {
+          // target may be deleted
+          return target[key].replace(browserHost!, childHost!)
+        }
+      }
 
       return bindFunctionToRawTarget<Location>(Reflect.get(target, key), target, 'LOCATION')
     },
@@ -207,15 +225,15 @@ export function createMicroLocation (
       if (isEffectiveApp(appName)) {
         const target = getTarget()
         if (key === 'href') {
-          const targetPath = commonHandler(value, 'pushState')
           /**
            * In vite, targetPath without origin will be completed with child origin
            * So we use browser origin to complete targetPath to avoid this problem
-           * But, why child app can affect browser jump?
-           * Guess(need check):
-           *  1. vite records the origin when init
-           *  2. listen for browser jump and automatically complete the address
+           * NOTE:
+           *  1. history mode & value is childOrigin + path ==> jump to browserOrigin + path
+           *  2. disable mode & value is childOrigin + path ==> jump to childOrigin + path
+           *  3. search mode & value is browserOrigin + path ==> jump to browserOrigin + path
            */
+          const targetPath = commonHandler(value, 'pushState')
           if (targetPath) {
             rawLocation.href = createURL(targetPath, rawLocation.origin).href
           }
@@ -304,9 +322,11 @@ export function updateMicroLocation (
     const microAppWindow = appInstanceMap.get(appName)!.sandBox.microAppWindow
     microAppWindow.rawReplaceState?.call(microAppWindow.history, getMicroState(appName), '', newLocation.href)
   } else {
-    for (const key of locationKeys) {
-      microLocation.self[key] = newLocation[key]
+    let targetHref = newLocation.href
+    if (microLocation.self.origin !== newLocation.origin) {
+      targetHref = targetHref.replace(newLocation.origin, microLocation.self.origin)
     }
+    microLocation.self.href = targetHref
   }
   // update latest values of microLocation to `to`
   const to = createGuardLocation(appName, microLocation)

@@ -11,6 +11,7 @@ import {
   logWarn,
   isUniqueElement,
   isInvalidQuerySelectorKey,
+  throttleDeferForSetAppName,
 } from '../../libs/utils'
 import globalEnv from '../../libs/global_env'
 import bindFunctionToRawTarget from '../bind_function'
@@ -57,7 +58,9 @@ function patchDocumentPrototype (appName: string, microAppWindow: microAppWindow
   const microRootDocument = microAppWindow.Document
   const microDocument = microAppWindow.document
   const rawMicroCreateElement = microRootDocument.prototype.createElement
+  const rawMicroCreateElementNS = microRootDocument.prototype.createElementNS
   const rawMicroCreateTextNode = microRootDocument.prototype.createTextNode
+  const rawMicroCreateDocumentFragment = microRootDocument.prototype.createDocumentFragment
   const rawMicroCreateComment = microRootDocument.prototype.createComment
   const rawMicroQuerySelector = microRootDocument.prototype.querySelector
   const rawMicroQuerySelectorAll = microRootDocument.prototype.querySelectorAll
@@ -87,9 +90,23 @@ function patchDocumentPrototype (appName: string, microAppWindow: microAppWindow
     return updateElementInfo(element, appName)
   }
 
+  microRootDocument.prototype.createElementNS = function createElementNS (
+    namespaceURI: string,
+    name: string,
+    options?: string | ElementCreationOptions,
+  ): HTMLElement {
+    const element = rawMicroCreateElementNS.call(this, namespaceURI, name, options)
+    return updateElementInfo(element, appName)
+  }
+
   microRootDocument.prototype.createTextNode = function createTextNode (data: string): Text {
     const element = rawMicroCreateTextNode.call(this, data)
     return updateElementInfo<Text>(element, appName)
+  }
+
+  microRootDocument.prototype.createDocumentFragment = function createDocumentFragment (): DocumentFragment {
+    const element = rawMicroCreateDocumentFragment.call(this)
+    return updateElementInfo(element, appName)
   }
 
   microRootDocument.prototype.createComment = function createComment (data: string): Comment {
@@ -161,10 +178,11 @@ function patchDocumentPrototype (appName: string, microAppWindow: microAppWindow
     const _this = getDefaultRawTarget(this)
     if (
       isUniqueElement(key) ||
-      isInvalidQuerySelectorKey(key) ||
-      (!appInstanceMap.get(appName)?.inline && /^script$/i.test(key))
+      isInvalidQuerySelectorKey(key)
     ) {
       return rawMicroGetElementsByTagName.call(_this, key)
+    } else if (/^script|base$/i.test(key)) {
+      return rawMicroGetElementsByTagName.call(microDocument, key)
     }
 
     try {
@@ -211,6 +229,7 @@ function patchDocumentProperty (
   const createDescriptors = (): PropertyDescriptorMap => {
     const result: PropertyDescriptorMap = {}
     const descList: Array<[string, () => unknown]> = [
+      // if disable-memory-router or router-mode='disable', href point to base app
       ['documentURI', () => sandbox.proxyLocation.href],
       ['URL', () => sandbox.proxyLocation.href],
       ['documentElement', () => rawDocument.documentElement],
@@ -220,6 +239,7 @@ function patchDocumentProperty (
       ['links', () => microRootDocument.prototype.querySelectorAll.call(microDocument, 'a')],
       // unique keys of micro-app
       ['microAppElement', () => appInstanceMap.get(appName)?.container],
+      ['__MICRO_APP_NAME__', () => appName],
     ]
 
     descList.forEach((desc) => {
@@ -254,7 +274,10 @@ function patchDocumentProperty (
     rawDefineProperty(microDocument, tagName, {
       enumerable: true,
       configurable: true,
-      get: () => rawDocument[tagName],
+      get: () => {
+        throttleDeferForSetAppName(appName)
+        return rawDocument[tagName]
+      },
       set: (value: unknown) => { rawDocument[tagName] = value },
     })
   })

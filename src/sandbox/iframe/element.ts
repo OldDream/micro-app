@@ -10,12 +10,12 @@ import {
   isScriptElement,
   isBaseElement,
   isElement,
-  isMicroAppBody,
   isNode,
+  isMicroAppBody,
+  throttleDeferForSetAppName,
 } from '../../libs/utils'
 import {
   updateElementInfo,
-  throttleDeferForParentNode
 } from '../adapter'
 import {
   appInstanceMap,
@@ -58,7 +58,8 @@ function patchIframeNode (
   const rawMicroInsertAdjacentElement = microRootElement.prototype.insertAdjacentElement
   const rawMicroCloneNode = microRootNode.prototype.cloneNode
   const rawInnerHTMLDesc = Object.getOwnPropertyDescriptor(microRootElement.prototype, 'innerHTML') as PropertyDescriptor
-  const rawParentNodeLDesc = Object.getOwnPropertyDescriptor(microRootNode.prototype, 'parentNode') as PropertyDescriptor
+  const rawParentNodeDesc = Object.getOwnPropertyDescriptor(microRootNode.prototype, 'parentNode') as PropertyDescriptor
+  const rawOwnerDocumentDesc = Object.getOwnPropertyDescriptor(microRootNode.prototype, 'ownerDocument') as PropertyDescriptor
 
   const isPureNode = (target: unknown): boolean | void => {
     return (isScriptElement(target) || isBaseElement(target)) && target.__PURE_ELEMENT__
@@ -83,6 +84,7 @@ function patchIframeNode (
   }
 
   microRootNode.prototype.appendChild = function appendChild <T extends Node> (node: T): T {
+    // TODO: 有必要执行这么多次updateElementInfo？
     updateElementInfo(node, appName)
     if (isPureNode(node)) {
       return rawMicroAppendChild.call(this, node)
@@ -158,6 +160,16 @@ function patchIframeNode (
     return updateElementInfo(clonedNode, appName)
   }
 
+  rawDefineProperty(microRootNode.prototype, 'ownerDocument', {
+    configurable: true,
+    enumerable: true,
+    get () {
+      return this.__PURE_ELEMENT__ || this === microDocument
+        ? rawOwnerDocumentDesc.get!.call(this)
+        : microDocument
+    },
+  })
+
   rawDefineProperty(microRootElement.prototype, 'innerHTML', {
     configurable: true,
     enumerable: true,
@@ -179,23 +191,27 @@ function patchIframeNode (
     configurable: true,
     enumerable: true,
     get () {
-      // set html.parentNode to microDocument
-      throttleDeferForParentNode(microDocument)
-      const result: ParentNode = rawParentNodeLDesc.get!.call(this)
       /**
-       * If parentNode is <micro-app-body>, return rawDocument.body
-       * Scenes:
-       *  1. element-ui@2/lib/utils/vue-popper.js
-       *    if (this.popperElm.parentNode === document.body) ...
-       * WARNING:
-       *  Will it cause other problems ?
-       *  e.g. target.parentNode.remove(target)
+       * set current appName for hijack parentNode of html
+       * NOTE:
+       *  1. Is there a problem with setting the current appName in iframe mode
        */
+      throttleDeferForSetAppName(appName)
+      const result: ParentNode = rawParentNodeDesc.get!.call(this)
+      /**
+        * If parentNode is <micro-app-body>, return rawDocument.body
+        * Scenes:
+        *  1. element-ui@2/lib/utils/vue-popper.js
+        *    if (this.popperElm.parentNode === document.body) ...
+        * WARNING:
+        *  Will it cause other problems ?
+        *  e.g. target.parentNode.remove(target)
+        */
       if (isMicroAppBody(result) && appInstanceMap.get(appName)?.container) {
-        return microApp.options.getRootElementParentNode?.(this, appName) || rawDocument.body
+        return microApp.options.getRootElementParentNode?.(this, appName) || globalEnv.rawDocument.body
       }
       return result
-    },
+    }
   })
 
   // Adapt to new image(...) scene

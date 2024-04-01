@@ -7,13 +7,20 @@
 **介绍：**
 ```js
 start (options?: {
-  tagName?: string, // 标签名称，默认为micro-app
-  shadowDOM?: boolean, // 是否开启shadowDOM，默认为false
-  destroy?: boolean, // 是否在子应用卸载时强制销毁所有缓存资源，默认为false
-  inline?: boolean, // 是否使用内联script方式执行js，默认为false
-  disableScopecss?: boolean, // 是否全局禁用样式隔离，默认为false
-  disableSandbox?: boolean, // 是否全局禁用沙箱，默认为false
-  ssr?: boolean, // 是否全局启用ssr模式，默认为false
+  tagName?: string, // 设置标签名称，默认为micro-app
+  iframe?: boolean, // 全局开启iframe沙箱，默认为false
+  inline?: boolean, // 全局开启内联script模式运行js，默认为false
+  destroy?: boolean, // 全局开启destroy模式，卸载时强制删除缓存资源，默认为false
+  // shadowDOM?: boolean, // 全局开启shadowDOM模式，默认为false
+  ssr?: boolean, // 全局开启ssr模式，默认为false
+  'disable-scopecss'?: boolean, // 全局禁用样式隔离，默认为false
+  'disable-sandbox'?: boolean, // 全局禁用沙箱，默认为false
+  'keep-alive'?: boolean, // 全局开启保活模式，默认为false
+  'disable-memory-router'?: boolean, // 全局关闭虚拟路由系统，默认值false
+  'keep-router-state'?: boolean, // 子应用在卸载时保留路由状态，默认值false
+  'disable-patch-request'?: boolean, // 关闭子应用请求的自动补全功能，默认值false
+  'router-mode'?: string, // 设置路由模式，共四种：search、native、native-scope、pure，默认为search
+  iframeSrc?: string, // 设置iframe沙箱中iframe的src地址，默认为子应用所在页面地址
   // 全局生命周期
   lifeCycles?: {
     created?(e?: CustomEvent): void
@@ -28,13 +35,13 @@ start (options?: {
     url: string,
     disableScopecss?: boolean,
     disableSandbox?: boolean,
-    shadowDOM?: boolean
+    // shadowDOM?: boolean
   }> | (() => Array<{
     name: string,
     url: string,
     disableScopecss?: boolean,
     disableSandbox?: boolean,
-    shadowDOM?: boolean
+    // shadowDOM?: boolean
   }>),
   // 插件系统，用于处理子应用的js文件
   plugins?: {
@@ -86,6 +93,8 @@ start (options?: {
   },
   // 指定部分特殊的动态加载的微应用资源（css/js) 不被 micro-app 劫持处理
   excludeAssetFilter?: (assetUrl: string) => boolean
+  // 基座对子应用 document 的一些属性进行自定义代理扩展
+  customProxyDocumentProps?: Map<string | number | symbol, (value: unknown) => void>
 })
 ```
 
@@ -209,12 +218,23 @@ document.body.appendChild(pureDiv)
 ## removeDomScope
 **描述：**解除元素绑定，通常用于受子应用元素绑定影响，导致主应用元素错误绑定到子应用的情况
 
+**介绍：**
+```js
+/**
+ * @param force 解除元素绑定，并且一定时间内(一个微任务Promise时间)阻止再次绑定。
+ */
+function removeDomScope(force?: boolean): void
+```
+
 **使用方式：**
 ```js
 import { removeDomScope } from '@micro-zoe/micro-app'
 
-// 重置作用域
+// 解除元素绑定
 removeDomScope()
+
+// 解除元素绑定，并且一定时间内阻止再次绑定
+removeDomScope(true)
 ```
 
 
@@ -247,17 +267,19 @@ function unmountApp(appName: string, options?: unmountAppParams): Promise<boolea
 
 **使用方式：**
 ```js
+import microApp from '@micro-zoe/micro-app'
+
 // 正常流程
-unmountApp(子应用名称).then(() => console.log('卸载成功'))
+microApp.unmountApp(子应用名称).then(() => console.log('卸载成功'))
 
 // 卸载应用并清空缓存资源
-unmountApp(子应用名称, { destroy: true }).then(() => console.log('卸载成功'))
+microApp.unmountApp(子应用名称, { destroy: true }).then(() => console.log('卸载成功'))
 
 // 如果子应用是keep-alive应用，则卸载并清空状态，如果子应用不是keep-alive应用，则正常卸载
-unmountApp(子应用名称, { clearAliveState: true }).then(() => console.log('卸载成功'))
+microApp.unmountApp(子应用名称, { clearAliveState: true }).then(() => console.log('卸载成功'))
 
 // 如果destroy和clearAliveState同时为true，则clearAliveState将失效
-unmountApp(子应用名称, { destroy: true, clearAliveState: true }).then(() => console.log('卸载成功'))
+microApp.unmountApp(子应用名称, { destroy: true, clearAliveState: true }).then(() => console.log('卸载成功'))
 ```
 
 ## unmountAllApps
@@ -289,17 +311,19 @@ function unmountAllApps(options?: unmountAppParams): Promise<boolean>
 
 **使用方式：**
 ```js
+import microApp from '@micro-zoe/micro-app'
+
 // 正常流程
-unmountAllApps().then(() => console.log('卸载成功'))
+microApp.unmountAllApps().then(() => console.log('卸载成功'))
 
 // 卸载所有应用并清空缓存资源
-unmountAllApps({ destroy: true }).then(() => console.log('卸载成功'))
+microApp.unmountAllApps({ destroy: true }).then(() => console.log('卸载成功'))
 
 // 如果子应用是keep-alive应用，则卸载并清空状态，如果子应用不是keep-alive应用，则正常卸载
-unmountAllApps({ clearAliveState: true }).then(() => console.log('卸载成功'))
+microApp.unmountAllApps({ clearAliveState: true }).then(() => console.log('卸载成功'))
 
 // 如果destroy和clearAliveState同时为true，则clearAliveState将失效
-unmountAllApps({ destroy: true, clearAliveState: true }).then(() => console.log('卸载成功'))
+microApp.unmountAllApps({ destroy: true, clearAliveState: true }).then(() => console.log('卸载成功'))
 ```
 
 
@@ -362,7 +386,7 @@ interface RenderAppOptions {
   fiber?: boolean, // 开启fiber模式，可选
   baseroute?: string, // 设置子应用的基础路由，可选
   ssr?: boolean, // 开启ssr模式，可选
-  shadowDOM?: boolean, // 开启shadowDOM，可选
+  // shadowDOM?: boolean, // 开启shadowDOM，可选
   data?: Object, // 传递给子应用的数据，可选
   onDataChange?: Function, // 获取子应用发送数据的监听函数，可选
   // 注册子应用的生命周期
@@ -616,10 +640,21 @@ document.body.appendChild(pureDiv)
 
 **版本限制：** 0.8.2及以上版本
 
+**介绍：**
+```js
+/**
+ * @param force 解除元素绑定，并且一定时间内(一个微任务Promise时间)阻止再次绑定。
+ */
+function removeDomScope(force?: boolean): void
+```
+
 **使用方式：**
 ```js
-// 重置作用域
+// 解除元素绑定
 window.microApp.removeDomScope()
+
+// 解除元素绑定，并且一定时间内阻止再次绑定
+window.microApp.removeDomScope(true)
 ```
 
 ## rawWindow

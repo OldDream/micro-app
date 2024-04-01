@@ -1,26 +1,24 @@
 import type {
-  SandBoxAdapter,
+  BaseSandboxType,
   AppInterface,
 } from '@micro-app/types'
 import globalEnv from '../libs/global_env'
 import {
   defer,
   isNode,
-  rawDefineProperty,
   rawDefineProperties,
 } from '../libs/utils'
 import {
   appInstanceMap,
-  isIframeSandbox,
 } from '../create_app'
 
-export default class Adapter implements SandBoxAdapter {
+export class BaseSandbox implements BaseSandboxType {
   constructor () {
     this.injectReactHMRProperty()
   }
 
   // keys that can only assigned to rawWindow
-  public escapeSetterKeyList: PropertyKey[] = [
+  public rawWindowScopeKeyList: PropertyKey[] = [
     'location',
   ]
 
@@ -35,7 +33,21 @@ export default class Adapter implements SandBoxAdapter {
     'webpackJsonp',
     'webpackHotUpdate',
     'Vue',
+    // TODO: 是否可以和constants/SCOPE_WINDOW_ON_EVENT合并
+    'onpopstate',
+    'onhashchange',
   ]
+
+  // Properties that can only get and set in microAppWindow, will not escape to rawWindow
+  public scopeProperties: PropertyKey[] = Array.from(this.staticScopeProperties)
+  // Properties that can be escape to rawWindow
+  public escapeProperties: PropertyKey[] = []
+  // Properties newly added to microAppWindow
+  public injectedKeys = new Set<PropertyKey>()
+  // Properties escape to rawWindow, cleared when unmount
+  public escapeKeys = new Set<PropertyKey>()
+  // Promise used to mark whether the sandbox is initialized
+  public sandboxReady!: Promise<void>
 
   // adapter for react
   private injectReactHMRProperty (): void {
@@ -52,6 +64,14 @@ export default class Adapter implements SandBoxAdapter {
     }
   }
 }
+
+/**
+ * TODO:
+ *  1、将class Adapter去掉，改为CustomWindow，或者让CustomWindow继承Adapter
+ *  2、with沙箱中的常量放入CustomWindow，虽然和iframe沙箱不一致，但更合理
+ * 修改时机：在iframe沙箱支持插件后再修改
+ */
+export class CustomWindow {}
 
 // Fix conflict of babel-polyfill@6.x
 export function fixBabelPolyfill6 (): void {
@@ -72,39 +92,6 @@ export function fixReactHMRConflict (app: AppInterface): void {
         globalEnv.rawWindow.__REACT_ERROR_OVERLAY_GLOBAL_HOOK__ = rawReactErrorHook
       })
     }
-  }
-}
-
-/**
- * reDefine parentNode of html
- * Scenes:
- *  1. element-ui@2/lib/utils/popper.js
- *    var parent = element.parentNode;
- *    // root is child app window
- *    if (parent === root.document) ...
- */
-export function throttleDeferForParentNode (microDocument: Document): void {
-  const html = globalEnv.rawDocument.firstElementChild
-  if (html?.parentNode === globalEnv.rawDocument) {
-    setParentNode(html, microDocument)
-    defer(() => {
-      setParentNode(html, globalEnv.rawDocument)
-    })
-  }
-}
-
-/**
- * Modify the point of parentNode
- * @param target target Node
- * @param value parentNode
- */
-export function setParentNode (target: Node, value: Document | Element): void {
-  const descriptor = Object.getOwnPropertyDescriptor(target, 'parentNode')
-  if (!descriptor || descriptor.configurable) {
-    rawDefineProperty(target, 'parentNode', {
-      value,
-      configurable: true,
-    })
   }
 }
 
@@ -144,11 +131,11 @@ export function updateElementInfo <T> (node: T, appName: string): T {
      *  1. 测试baseURI和ownerDocument在with沙箱中是否正确
      *    经过验证with沙箱不能重写ownerDocument，否则react点击事件会触发两次
      *  2. with沙箱所有node设置__MICRO_APP_NAME__都使用updateElementInfo
-     *  3. 性能: defineProperty的性能肯定不如直接设置
     */
     rawDefineProperties(node, {
       baseURI: {
         configurable: true,
+        // if disable-memory-router or router-mode='disable', href point to base app
         get: () => proxyWindow.location.href,
       },
       __MICRO_APP_NAME__: {
@@ -157,13 +144,6 @@ export function updateElementInfo <T> (node: T, appName: string): T {
         value: appName,
       },
     })
-
-    if (isIframeSandbox(appName)) {
-      rawDefineProperty(node, 'ownerDocument', {
-        configurable: true,
-        get: () => proxyWindow.document,
-      })
-    }
   }
 
   return node

@@ -58,6 +58,7 @@ window.mount = () => {
         render: h => h(App),
       }).$mount('#app')
       console.log("微应用vue2渲染了 -- UMD模式")
+      console.log('微应用vue2通过 microApp.getData 获取数据', window.microApp?.getData());
       resolve()
     // }, 3000)
   })
@@ -95,3 +96,15 @@ const newImg = new Image()
 newImg.src = '/micro-app/vue2/img/micro-app-logo.29137522.jpeg'
 document.body.appendChild(newImg)
 newImg.setAttribute('width', '50px')
+
+/* ---------------------- 获取script元素 --------------------- */
+// console.log('script元素', document.getElementsByTagName('script'), document.getElementsByTagName('base'))
+
+/* ---------------------- popstate 和 hashchange --------------------- */
+window.addEventListener('popstate', (e) => {
+  console.log('子应用 popstate', e)
+})
+
+window.addEventListener('hashchange', (e) => {
+  console.log('子应用 hashchange', e, e.newURL, e.oldURL)
+})

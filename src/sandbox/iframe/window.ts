@@ -10,11 +10,12 @@ import {
   rawDefineProperty,
   isFunction,
   logWarn,
+  includes,
 } from '../../libs/utils'
 import {
   GLOBAL_KEY_TO_WINDOW,
-  SCOPE_WINDOW_EVENT,
-  SCOPE_WINDOW_ON_EVENT,
+  SCOPE_WINDOW_EVENT_OF_IFRAME,
+  SCOPE_WINDOW_ON_EVENT_OF_IFRAME,
 } from '../../constants'
 import {
   escape2RawWindowKeys,
@@ -54,17 +55,17 @@ function patchWindowProperty (
 
   Object.getOwnPropertyNames(microAppWindow)
     .filter((key: string) => {
-      escape2RawWindowRegExpKeys.some((reg: RegExp) => {
-        if (reg.test(key) && key in microAppWindow.parent) {
-          if (isFunction(rawWindow[key])) {
-            microAppWindow[key] = bindFunctionToRawTarget(rawWindow[key], rawWindow)
-          } else {
+      escape2RawWindowRegExpKeys.some((reg: RegExp) => {  // 正则命中的属性，都要让它穿透到父容器中的window？
+        if (reg.test(key) && key in microAppWindow.parent) { // 判断是否为和父容器window中重名，且满足正则判断
+          if (isFunction(rawWindow[key])) { // 是函数
+            microAppWindow[key] = bindFunctionToRawTarget(rawWindow[key], rawWindow) // 子应用中的函数，其中的window指向父容器的window？
+          } else { // 是普通属性
             const { configurable, enumerable } = Object.getOwnPropertyDescriptor(microAppWindow, key) || {
               configurable: true,
               enumerable: true,
             }
             if (configurable) {
-              rawDefineProperty(microAppWindow, key, {
+              rawDefineProperty(microAppWindow, key, { // 联动子应用中的属性和父容器window中的同名属性
                 configurable,
                 enumerable,
                 get: () => rawWindow[key],
@@ -76,8 +77,8 @@ function patchWindowProperty (
         }
         return false
       })
-
-      return /^on/.test(key) && !SCOPE_WINDOW_ON_EVENT.includes(key)
+      // 过滤出on开头的，且不在SCOPE_WINDOW_ON_EVENT_OF_IFRAME中的属性
+      return /^on/.test(key) && !SCOPE_WINDOW_ON_EVENT_OF_IFRAME.includes(key)
     })
     .forEach((eventName: string) => {
       const { enumerable, writable, set } = Object.getOwnPropertyDescriptor(microAppWindow, eventName) || {
@@ -89,7 +90,7 @@ function patchWindowProperty (
           enumerable,
           configurable: true,
           get: () => rawWindow[eventName],
-          set: writable ?? !!set
+          set: writable ?? !!set // writable 为 true或者set有配置
             ? (value) => { rawWindow[eventName] = isFunction(value) ? value.bind(microAppWindow) : value }
             : undefined,
         })
@@ -109,20 +110,38 @@ function createProxyWindow (
   sandbox: IframeSandbox,
 ): void {
   const rawWindow = globalEnv.rawWindow
-  const customProperties: PropertyKey[] = []
+  const customProperties = new Set<PropertyKey>()
 
+  /**
+   * proxyWindow will only take effect in certain scenes, such as window.key
+   * e.g:
+   *  1. window.key in normal app --> fall into proxyWindow
+   *  2. window.key in module app(vite), fall into microAppWindow(iframeWindow)
+   *  3. if (key)... --> fall into microAppWindow(iframeWindow)
+   */
   const proxyWindow = new Proxy(microAppWindow, {
     get: (target: microAppWindowType, key: PropertyKey): unknown => {
       if (key === 'location') {
         return sandbox.proxyLocation
       }
 
-      if (GLOBAL_KEY_TO_WINDOW.includes(key.toString())) {
+      if (includes(GLOBAL_KEY_TO_WINDOW, key)) {
         return proxyWindow
       }
 
-      if (customProperties.includes(key)) {
+      if (customProperties.has(key)) {
         return Reflect.get(target, key)
+      }
+
+      /**
+       * Same as proxyWindow, escapeProperties will only take effect in certain scenes
+       * e.g:
+       *  1. window.key in normal app --> fall into proxyWindow, escapeProperties will effect
+       *  2. window.key in module app(vite), fall into microAppWindow(iframeWindow), escapeProperties will not take effect
+       *  3. if (key)... --> fall into microAppWindow(iframeWindow), escapeProperties will not take effect
+       */
+      if (includes(sandbox.escapeProperties, key) && !Reflect.has(target, key)) {
+        return bindFunctionToRawTarget(Reflect.get(rawWindow, key), rawWindow)
       }
 
       return bindFunctionToRawTarget(Reflect.get(target, key), target)
@@ -133,12 +152,12 @@ function createProxyWindow (
       }
 
       if (!Reflect.has(target, key)) {
-        customProperties.push(key)
+        customProperties.add(key)
       }
 
       Reflect.set(target, key, value)
 
-      if (sandbox.escapeProperties.includes(key)) {
+      if (includes(sandbox.escapeProperties, key)) {
         !Reflect.has(rawWindow, key) && sandbox.escapeKeys.add(key)
         Reflect.set(rawWindow, key, value)
       }
@@ -164,7 +183,7 @@ function patchWindowEffect (microAppWindow: microAppWindowType): CommonEffectHoo
   const sstEventListenerMap = new Map<string, Set<MicroEventListener>>()
 
   function getEventTarget (type: string): Window {
-    return SCOPE_WINDOW_EVENT.includes(type) ? microAppWindow : rawWindow
+    return SCOPE_WINDOW_EVENT_OF_IFRAME.includes(type) ? microAppWindow : rawWindow
   }
 
   // TODO: listener 是否需要绑定microAppWindow，否则函数中的this指向原生window

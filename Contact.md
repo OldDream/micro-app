@@ -1,24 +1,7 @@
+
 欢迎小伙伴们加入micro-app微信群交流^ ^
 
-![image](https://github.com/micro-zoe/micro-app/assets/14011130/851dc743-6946-4d97-ab3d-360aa4ed94d6)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+![IMG_7797](https://github.com/micro-zoe/micro-app/assets/14011130/2e7a1514-e83a-4b4c-b29b-b200801536a8)
 
 
 

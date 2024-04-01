@@ -19,6 +19,7 @@ export const escape2RawWindowRegExpKeys = [
   /^screen/i,
   /^scroll/i,
   /X$|Y$/,
+  // /^(?:HTML\w*)?Element$/,
 ]
 
 export const uniqueDocumentElement = [
@@ -26,14 +27,6 @@ export const uniqueDocumentElement = [
   'head',
   'html',
   'title',
-]
-
-export const hijackMicroLocationKeys = [
-  'host',
-  'hostname',
-  'port',
-  'protocol',
-  'origin',
 ]
 
 // 有shadowRoot则代理到shadowRoot否则代理到原生document上 (属性)

@@ -63,8 +63,7 @@ function isInlineMode (app: AppInterface, scriptInfo: ScriptSourceInfo): boolean
     app.inline ||
     scriptInfo.appSpace[app.name].inline ||
     isTypeModule(app, scriptInfo) ||
-    isSpecialScript(app, scriptInfo) ||
-    app.iframe
+    isSpecialScript(app, scriptInfo)
   )
 }
 
@@ -333,14 +332,14 @@ export function fetchScriptsFromHtml (
       logError(err, app.name)
     }, () => {
       if (fiberScriptTasks) {
-        fiberScriptTasks.push(() => Promise.resolve(app.onLoad(wrapElement)))
+        fiberScriptTasks.push(() => Promise.resolve(app.onLoad({ html: wrapElement })))
         serialExecFiberTasks(fiberScriptTasks)
       } else {
-        app.onLoad(wrapElement)
+        app.onLoad({ html: wrapElement })
       }
     })
   } else {
-    app.onLoad(wrapElement)
+    app.onLoad({ html: wrapElement })
   }
 }
 
@@ -533,6 +532,8 @@ export function runScript (
     }
   } catch (e) {
     console.error(`[micro-app from ${replaceElement ? 'runDynamicScript' : 'runScript'}] app ${app.name}: `, e, address)
+    // throw error in with sandbox to parent app
+    throw e
   }
 }
 

@@ -21,7 +21,9 @@ import {
   getMicroState,
   getMicroPathFromURL,
   isEffectiveApp,
-  isRouterModeCustom,
+  isRouterModePure,
+  isRouterModeSearch,
+  isRouterModeState,
 } from './core'
 import { dispatchNativeEvent } from './event'
 import { updateMicroLocation } from './location'
@@ -33,7 +35,7 @@ import { appInstanceMap, isIframeSandbox } from '../../create_app'
  * create proxyHistory for microApp
  * MDN https://developer.mozilla.org/en-US/docs/Web/API/History
  * @param appName app name
- * @param microLocation microApp location
+ * @param microLocation microApp location(with: proxyLocation iframe: iframeWindow.location)
  */
 export function createMicroHistory (appName: string, microLocation: MicroLocation): MicroHistory {
   const rawHistory = globalEnv.rawWindow.history
@@ -43,14 +45,16 @@ export function createMicroHistory (appName: string, microLocation: MicroLocatio
       if (isString(rests[2]) || isURL(rests[2])) {
         const targetLocation = createURL(rests[2], microLocation.href)
         const targetFullPath = targetLocation.pathname + targetLocation.search + targetLocation.hash
-        navigateWithNativeEvent(
-          appName,
-          methodName,
-          setMicroPathToURL(appName, targetLocation),
-          true,
-          setMicroState(appName, rests[0]),
-          rests[1],
-        )
+        if (!isRouterModePure(appName)) {
+          navigateWithNativeEvent(
+            appName,
+            methodName,
+            setMicroPathToURL(appName, targetLocation),
+            true,
+            setMicroState(appName, rests[0], targetLocation),
+            rests[1],
+          )
+        }
         if (targetFullPath !== microLocation.fullPath) {
           updateMicroLocation(appName, targetFullPath, microLocation)
         }
@@ -141,8 +145,12 @@ export function navigateWithNativeEvent (
     const oldHref = result.isAttach2Hash && oldFullPath !== result.fullPath ? rawLocation.href : null
     // navigate with native history method
     nativeHistoryNavigate(appName, methodName, result.fullPath, state, title)
-    // TODO: 如果所有模式统一发送popstate事件，则!isRouterModeCustom(appName)要去掉
-    if (oldFullPath !== result.fullPath && !isRouterModeCustom(appName)) {
+    /**
+     * TODO:
+     *  1. 如果所有模式统一发送popstate事件，则isRouterModeSearch(appName)要去掉
+     *  2. 如果发送事件，则会导致vue router-view :key='router.path'绑定，无限卸载应用，死循环
+     */
+    if (oldFullPath !== result.fullPath && isRouterModeSearch(appName)) {
       dispatchNativeEvent(appName, onlyForBrowser, oldHref)
     }
   }
@@ -164,23 +172,23 @@ export function attachRouteToBrowserURL (
 }
 
 /**
- * When path is same, keep the microAppState in history.state
- * Fix bug of missing microAppState when base app is next.js or angular
+ * When path is same, keep the __MICRO_APP_STATE__ in history.state
+ * Fix bug of missing __MICRO_APP_STATE__ when base app is next.js or angular
  * @param method history.pushState/replaceState
  */
 function reWriteHistoryMethod (method: History['pushState' | 'replaceState']): CallableFunction {
   const rawWindow = globalEnv.rawWindow
   return function (...rests: [data: any, unused: string, url?: string]): void {
     if (
-      rawWindow.history.state?.microAppState &&
-      (!isPlainObject(rests[0]) || !rests[0].microAppState) &&
+      rawWindow.history.state?.__MICRO_APP_STATE__ &&
+      (!isPlainObject(rests[0]) || !rests[0].__MICRO_APP_STATE__) &&
       (isString(rests[2]) || isURL(rests[2]))
     ) {
       const currentHref = rawWindow.location.href
       const targetLocation = createURL(rests[2], currentHref)
       if (targetLocation.href === currentHref) {
         rests[0] = assign({}, rests[0], {
-          microAppState: rawWindow.history.state.microAppState,
+          __MICRO_APP_STATE__: rawWindow.history.state.__MICRO_APP_STATE__,
         })
       }
     }
@@ -197,12 +205,12 @@ function reWriteHistoryMethod (method: History['pushState' | 'replaceState']): C
       excludeHiddenApp: true,
       excludePreRender: true,
     }).forEach(appName => {
-      if (!isRouterModeCustom(appName) && !getMicroPathFromURL(appName)) {
+      if ((isRouterModeSearch(appName) || isRouterModeState(appName)) && !getMicroPathFromURL(appName)) {
         const app = appInstanceMap.get(appName)!
         attachRouteToBrowserURL(
           appName,
           setMicroPathToURL(appName, app.sandBox.proxyWindow.location as MicroLocation),
-          setMicroState(appName, getMicroState(appName)),
+          setMicroState(appName, getMicroState(appName), app.sandBox.proxyWindow.location as MicroLocation),
         )
       }
     })
@@ -213,7 +221,7 @@ function reWriteHistoryMethod (method: History['pushState' | 'replaceState']): C
 
 /**
  * rewrite history.pushState/replaceState
- * used to fix the problem that the microAppState maybe missing when mainApp navigate to same path
+ * used to fix the problem that the __MICRO_APP_STATE__ maybe missing when mainApp navigate to same path
  * e.g: when nextjs, angular receive popstate event, they will use history.replaceState to update browser url with a new state object
  */
 export function patchHistory (): void {

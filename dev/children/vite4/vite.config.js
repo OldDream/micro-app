@@ -4,8 +4,14 @@ import vue from '@vitejs/plugin-vue'
 // import legacy from '@vitejs/plugin-legacy'
 import AutoImport from 'unplugin-auto-import/vite'
 import Components from 'unplugin-vue-components/vite'
-import { ElementPlusResolver, AntDesignVueResolver, NaiveUiResolver } from 'unplugin-vue-components/resolvers'
+import {
+  ElementPlusResolver,
+  AntDesignVueResolver,
+  NaiveUiResolver,
+  // ArcoResolver,
+} from 'unplugin-vue-components/resolvers'
 import ElementPlus from 'unplugin-element-plus/vite'
+import UnoCSS from 'unocss/vite'
 
 const pathSrc = path.resolve(__dirname, 'src')
 // https://vitejs.dev/config/
@@ -13,7 +19,8 @@ export default defineConfig({
   resolve: {
     alias: {
       '~/': `${pathSrc}/`,
-    },
+      '@micro-zoe/micro-app':path.resolve(__dirname, '../../../lib/index.esm.js')
+    }
   },
   css: {
     preprocessorOptions: {
@@ -31,6 +38,7 @@ export default defineConfig({
       resolvers: [
         ElementPlusResolver(),
         // AntDesignVueResolver(), // need it?
+        // ArcoResolver(),
       ],
       imports: [
         'vue',
@@ -51,9 +59,13 @@ export default defineConfig({
         }),
         AntDesignVueResolver(),
         NaiveUiResolver(),
+        // ArcoResolver({
+        //   sideEffect: true
+        // })
       ],
     }),
-    ElementPlus()
+    ElementPlus(),
+    UnoCSS(),
   ],
   server: {
     port: 7002,
@@ -64,11 +76,15 @@ export default defineConfig({
         secure: false,
         changeOrigin: true,
       }
-    }
+    },
+     // Allow services to be provided for non root directories of projects
+     fs: {
+      strict: false
+    },
   },
   build: {
     outDir: 'vite4',
   },
   clearScreen: false,
-  base: `/micro-app/vite4/`,
+  base: `/micro-app/vite4/`
 })

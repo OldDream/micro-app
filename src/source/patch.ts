@@ -37,9 +37,11 @@ import {
   checkExcludeUrl,
   checkIgnoreUrl,
 } from './scripts'
+import {
+  fixReactHMRConflict,
+} from '../sandbox/adapter'
 import microApp from '../micro_app'
 import globalEnv from '../libs/global_env'
-import { fixReactHMRConflict } from '../sandbox/adapter'
 
 // Record element and map element
 const dynamicElementInMicroAppMap = new WeakMap<Node, Element | Comment>()
@@ -148,10 +150,6 @@ function invokePrototypeMethod (
   passiveChild?: Node | null,
 ): any {
   const hijackParent = getHijackParent(parent, targetChild, app)
-  /**
-   * If passiveChild is not the child node, insertBefore replaceChild will have a problem, at this time, it will be degraded to appendChild
-   * E.g: document.head.insertBefore(targetChild, document.head.childNodes[0])
-   */
   if (hijackParent) {
     /**
      * If parentNode is <micro-app-body>, return rawDocument.body
@@ -192,25 +190,37 @@ function invokePrototypeMethod (
       }
     }
 
-    /**
-     * 1. If passiveChild exists, it must be insertBefore or replaceChild
-     * 2. When removeChild, targetChild may not be in microAppHead or head
-     */
-    if (passiveChild && !hijackParent.contains(passiveChild)) {
-      return globalEnv.rawAppendChild.call(hijackParent, targetChild)
-    } else if (rawMethod === globalEnv.rawRemoveChild && !hijackParent.contains(targetChild)) {
-      if (parent.contains(targetChild)) {
-        return rawMethod.call(parent, targetChild)
-      }
-      return targetChild
-    }
-
     if (
       __DEV__ &&
       isIFrameElement(targetChild) &&
       rawMethod === globalEnv.rawAppendChild
     ) {
       fixReactHMRConflict(app)
+    }
+
+    /**
+     * 1. If passiveChild exists, it must be insertBefore or replaceChild
+     * 2. When removeChild, targetChild may not be in microAppHead or head
+     * NOTE:
+     *  1. If passiveChild not in hijackParent, insertBefore replaceChild will be degraded to appendChild
+     *    E.g: document.head.replaceChild(targetChild, document.scripts[0])
+     *  2. If passiveChild not in hijackParent but in parent and method is insertBefore, try insert it into the position corresponding to hijackParent
+     *    E.g: document.head.insertBefore(targetChild, document.head.childNodes[0])
+     *    ISSUE: https://github.com/micro-zoe/micro-app/issues/1071
+     */
+    if (passiveChild && !hijackParent.contains(passiveChild)) {
+      if (rawMethod === globalEnv.rawInsertBefore && parent.contains(passiveChild)) {
+        const indexOfParent = Array.from(parent.childNodes).indexOf(passiveChild as ChildNode)
+        if (hijackParent.childNodes[indexOfParent]) {
+          return invokeRawMethod(rawMethod, hijackParent, targetChild, hijackParent.childNodes[indexOfParent])
+        }
+      }
+      return globalEnv.rawAppendChild.call(hijackParent, targetChild)
+    } else if (rawMethod === globalEnv.rawRemoveChild && !hijackParent.contains(targetChild)) {
+      if (parent.contains(targetChild)) {
+        return rawMethod.call(parent, targetChild)
+      }
+      return targetChild
     }
 
     return invokeRawMethod(rawMethod, hijackParent, targetChild, passiveChild)
@@ -306,6 +316,11 @@ function commonElementHandler (
   ) {
     newChild.__MICRO_APP_NAME__ = newChild.__MICRO_APP_NAME__ || currentAppName!
     const app = appInstanceMap.get(newChild.__MICRO_APP_NAME__)
+    if (isStyleElement(newChild)) {
+      const isShadowNode = parent.getRootNode()
+      const isShadowEnvironment = isShadowNode instanceof ShadowRoot
+      isShadowEnvironment && newChild.setAttribute('ignore', 'true')
+    }
     if (app?.container) {
       completePathDynamic(app, newChild)
       return invokePrototypeMethod(
@@ -332,6 +347,7 @@ export function patchElementAndDocument (): void {
   patchDocument()
 
   const rawRootElement = globalEnv.rawRootElement
+  const rawRootNode = globalEnv.rawRootNode
 
   // prototype methods of add element👇
   rawRootElement.prototype.appendChild = function appendChild<T extends Node> (newChild: T): T {
@@ -413,29 +429,33 @@ export function patchElementAndDocument (): void {
     return clonedNode
   }
 
-  function getQueryTarget (node: Node): Node | null {
+  /**
+   * document.body(head).querySelector(querySelectorAll) hijack to microAppBody(microAppHead).querySelector(querySelectorAll)
+   * NOTE:
+   *  1. May cause some problems!
+   *  2. Add config options?
+   */
+  function getQueryTarget (target: Node): Node | null {
     const currentAppName = getCurrentAppName()
-    if ((node === document.body || node === document.head) && currentAppName) {
+    if ((target === document.body || target === document.head) && currentAppName) {
       const app = appInstanceMap.get(currentAppName)
       if (app?.container) {
-        if (node === document.body) {
+        if (target === document.body) {
           return app.querySelector('micro-app-body')
-        } else if (node === document.head) {
+        } else if (target === document.head) {
           return app.querySelector('micro-app-head')
         }
       }
     }
-    return null
+    return target
   }
 
   rawRootElement.prototype.querySelector = function querySelector (selectors: string): Node | null {
-    const target = getQueryTarget(this) ?? this
-    return globalEnv.rawElementQuerySelector.call(target, selectors)
+    return globalEnv.rawElementQuerySelector.call(getQueryTarget(this) ?? this, selectors)
   }
 
   rawRootElement.prototype.querySelectorAll = function querySelectorAll (selectors: string): NodeListOf<Node> {
-    const target = getQueryTarget(this) ?? this
-    return globalEnv.rawElementQuerySelectorAll.call(target, selectors)
+    return globalEnv.rawElementQuerySelectorAll.call(getQueryTarget(this) ?? this, selectors)
   }
 
   // rewrite setAttribute, complete resource address
@@ -504,38 +524,47 @@ export function patchElementAndDocument (): void {
       const currentAppName = getCurrentAppName()
       Array.from(this.children).forEach((child) => {
         if (isElement(child) && currentAppName) {
+          // TODO: 使用updateElementInfo进行更新
           child.__MICRO_APP_NAME__ = currentAppName
         }
       })
     }
   })
 
-  /**
-   * NOTE:Abandon this way at 2023.2.28 before v1.0.0-beta.0, it will cause vue2 throw error when render again
-   */
-  // rawDefineProperty(Node.prototype, 'parentNode', {
-  //   configurable: true,
-  //   enumerable: true,
-  //   get () {
-  //     const result = globalEnv.rawParentNodeDesc.get.call(this)
-  //     /**
-  //      * If parentNode is <micro-app-body>, return rawDocument.body
-  //      * Scenes:
-  //      *  1. element-ui@2/lib/utils/vue-popper.js
-  //      *    if (this.popperElm.parentNode === document.body) ...
-  //      * WARNING:
-  //      *  Will it cause other problems ?
-  //      *  e.g. target.parentNode.remove(target)
-  //      * BUG:
-  //      *  1. vue2 umdMode, throw error when render again (<div id='app'></div> will be deleted when render again )
-  //      */
-  //     if (isMicroAppBody(result) && appInstanceMap.get(this.__MICRO_APP_NAME__)?.container) {
-  //       return document.body
-  //     }
-  //     return result
-  //   },
-  //   set: undefined,
-  // })
+  rawDefineProperty(rawRootNode.prototype, 'parentNode', {
+    configurable: true,
+    enumerable: true,
+    get () {
+      /**
+       * hijack parentNode of html
+       * Scenes:
+       *  1. element-ui@2/lib/utils/popper.js
+       *    // root is child app window, so root.document is proxyDocument or microDocument
+       *    if (element.parentNode === root.document) ...
+      */
+      const currentAppName = getCurrentAppName()
+      if (currentAppName && this === globalEnv.rawDocument.firstElementChild) {
+        const microDocument = appInstanceMap.get(currentAppName)?.sandBox?.proxyWindow?.document
+        if (microDocument) return microDocument
+      }
+      const result = globalEnv.rawParentNodeDesc.get.call(this) as Node
+      /**
+       * If parentNode is <micro-app-body>, return rawDocument.body
+       * Scenes:
+       *  1. element-ui@2/lib/utils/vue-popper.js
+       *    if (this.popperElm.parentNode === document.body) ...
+       * WARNING:
+       *  Will it cause other problems ?
+       *  e.g. target.parentNode.remove(target)
+       * BUG:
+       *  1. vue2 umdMode, throw error when render again (<div id='app'></div> will be deleted when render again ) -- Abandon this way at 2023.2.28 before v1.0.0-beta.0, it will cause vue2 throw error when render again
+       */
+      // if (isMicroAppBody(result) && appInstanceMap.get(this.__MICRO_APP_NAME__)?.container) {
+      //   return document.body
+      // }
+      return result
+    },
+  })
 }
 
 /**
@@ -575,15 +604,16 @@ function patchDocument () {
     return markElement(element)
   }
 
-  rawRootDocument.prototype.createDocumentFragment = function createDocumentFragment (): DocumentFragment {
-    const element = globalEnv.rawCreateDocumentFragment.call(getBindTarget(this))
-    return markElement(element)
-  }
-
+  // TODO: 放开
   // rawRootDocument.prototype.createTextNode = function createTextNode (data: string): Text {
   //   const element = globalEnv.rawCreateTextNode.call(getBindTarget(this), data)
   //   return markElement(element)
   // }
+
+  rawRootDocument.prototype.createDocumentFragment = function createDocumentFragment (): DocumentFragment {
+    const element = globalEnv.rawCreateDocumentFragment.call(getBindTarget(this))
+    return markElement(element)
+  }
 
   rawRootDocument.prototype.createComment = function createComment (data: string): Comment {
     const element = globalEnv.rawCreateComment.call(getBindTarget(this), data)
@@ -598,7 +628,7 @@ function patchDocument () {
       !currentAppName ||
       !selectors ||
       isUniqueElement(selectors) ||
-      // see https://github.com/micro-zoe/micro-app/issues/56
+      // ISSUE: https://github.com/micro-zoe/micro-app/issues/56
       rawDocument !== _this
     ) {
       return globalEnv.rawQuerySelector.call(_this, selectors)
@@ -703,6 +733,7 @@ export function releasePatchElementAndDocument (): void {
   releasePatchDocument()
 
   const rawRootElement = globalEnv.rawRootElement
+  const rawRootNode = globalEnv.rawRootNode
   rawRootElement.prototype.appendChild = globalEnv.rawAppendChild
   rawRootElement.prototype.insertBefore = globalEnv.rawInsertBefore
   rawRootElement.prototype.replaceChild = globalEnv.rawReplaceChild
@@ -714,6 +745,7 @@ export function releasePatchElementAndDocument (): void {
   rawRootElement.prototype.querySelectorAll = globalEnv.rawElementQuerySelectorAll
   rawRootElement.prototype.setAttribute = globalEnv.rawSetAttribute
   rawDefineProperty(rawRootElement.prototype, 'innerHTML', globalEnv.rawInnerHTMLDesc)
+  rawDefineProperty(rawRootNode.prototype, 'parentNode', globalEnv.rawParentNodeDesc)
 }
 
 // Set the style of micro-app-head and micro-app-body

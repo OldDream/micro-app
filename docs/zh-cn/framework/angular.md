@@ -182,7 +182,7 @@ module.exports = {
 #### 3、设置 publicPath
 如果子应用出现静态资源地址404(js、css、图片)，建议设置`publicPath`来尝试解决这个问题。
 
-`publicPath`是webpack提供的功能，它可以补全静态资源的地址，详情参考webpack文档 [publicPath](https://webpack.docschina.org/guides/public-path/#on-the-fly)
+`publicPath`是webpack提供的功能，所以vite应用是不支持的，它可以补全静态资源的地址，详情参考webpack文档 [publicPath](https://webpack.docschina.org/guides/public-path/#on-the-fly)
 
 **步骤1:** 在子应用src目录下创建名称为`public-path.ts`的文件，并添加如下内容
 ```js
@@ -212,7 +212,7 @@ MicroApp有两种沙箱方案：`with沙箱`和`iframe沙箱`。
 
 **解决方式：**通过`ngZone.run()`触发更改检测，具体方式如下：
 
-![angular-question3](../../../static/images/angular-1.png ':size=800')
+![angular-question3](https://img14.360buyimg.com/imagetools/jfs/t1/207551/36/34684/49729/6523aee1F5efef0be/e50e6d782a223dc9.png ':size=800')
 
 #### 2、主应用是react、nextjs应用，引入zone.js后导致micro-app元素生命周期异常
 目前无法解决，请暂停使用生命周期函数。

@@ -58,21 +58,51 @@ export enum MicroAppConfig {
   FIBER = 'fiber',
 }
 
+/**
+ * global key must be static key, they can not rewrite
+ * e.g.
+ * window.Promise = newValue
+ * new Promise ==> still get old value, not newValue, because they are cached by top function
+ * NOTE:
+ * 1. Do not add fetch, XMLHttpRequest, EventSource
+ */
+export const GLOBAL_CACHED_KEY = 'window,self,globalThis,document,Document,Array,Object,String,Boolean,Math,Number,Symbol,Date,Function,Proxy,WeakMap,WeakSet,Set,Map,Reflect,Element,Node,RegExp,Error,TypeError,JSON,isNaN,parseFloat,parseInt,performance,console,decodeURI,encodeURI,decodeURIComponent,encodeURIComponent,navigator,undefined,location,history'
+
 // prefetch level
 export const PREFETCH_LEVEL: number[] = [1, 2, 3]
 
-// memory router constants
+/**
+ * memory router modes
+ * NOTE:
+ *  1. The only difference between native and native-scope is location.origin, in native-scope mode location.origin point to child app
+ *  2. native mode equal to disable-memory-router
+*/
+// 临时注释，1.0版本放开，默认模式切换为state
+// // default mode, sync child app router info to history.state
+// export const DEFAULT_ROUTER_MODE = 'state'
+// // sync child app router info to browser url as search
+// export const ROUTER_MODE_SEARCH = 'search'
+
+// 临时放开，1.0版本去除
+export const ROUTER_MODE_STATE = 'state'
 export const DEFAULT_ROUTER_MODE = 'search'
-export const ROUTER_MODE_HISTORY = 'history'
-export const ROUTER_MODE_CUSTOM = 'custom'
+
+// render base on browser url, and location.origin location.href point to base app
+export const ROUTER_MODE_NATIVE = 'native'
+// render base on browser url, but location.origin location.href point to child app
+export const ROUTER_MODE_NATIVE_SCOPE = 'native-scope'
+// search mode, but child router info will not sync to browser url
+export const ROUTER_MODE_PURE = 'pure'
 export const ROUTER_MODE_LIST: string[] = [
   DEFAULT_ROUTER_MODE,
-  ROUTER_MODE_HISTORY,
-  ROUTER_MODE_CUSTOM,
+  ROUTER_MODE_STATE,
+  ROUTER_MODE_NATIVE,
+  ROUTER_MODE_NATIVE_SCOPE,
+  ROUTER_MODE_PURE,
 ]
 
 // event bound to child app window
-export const SCOPE_WINDOW_EVENT = [
+const BASE_SCOPE_WINDOW_EVENT = [
   'popstate',
   'hashchange',
   'load',
@@ -80,16 +110,36 @@ export const SCOPE_WINDOW_EVENT = [
   'unload',
   'unmount',
   'appstate-change',
+  'statechange',
+  'mounted',
 ]
 
+// bind event of with sandbox
+export const SCOPE_WINDOW_EVENT_OF_WITH = BASE_SCOPE_WINDOW_EVENT
+
+// bind event of iframe sandbox
+export const SCOPE_WINDOW_EVENT_OF_IFRAME = BASE_SCOPE_WINDOW_EVENT.concat([
+  'unhandledrejection',
+])
+
 // on event bound to child app window
-export const SCOPE_WINDOW_ON_EVENT = [
+// TODO: with和iframe处理方式不同，需修改
+const BASE_SCOPE_WINDOW_ON_EVENT = [
   'onpopstate',
   'onhashchange',
   'onload',
   'onbeforeunload',
   'onunload',
+  'onerror'
 ]
+
+// bind on event of with sandbox
+export const SCOPE_WINDOW_ON_EVENT_OF_WITH = BASE_SCOPE_WINDOW_ON_EVENT
+
+// bind on event of iframe sandbox
+export const SCOPE_WINDOW_ON_EVENT_OF_IFRAME = BASE_SCOPE_WINDOW_ON_EVENT.concat([
+  'onunhandledrejection',
+])
 
 // event bound to child app document
 export const SCOPE_DOCUMENT_EVENT = [
@@ -111,12 +161,10 @@ export const GLOBAL_KEY_TO_WINDOW: Array<PropertyKey> = [
 
 export const RAW_GLOBAL_TARGET: Array<PropertyKey> = ['rawWindow', 'rawDocument']
 
-/**
- * global key must be static key, they can not rewrite
- * e.g.
- * window.Promise = newValue
- * new Promise ==> still get old value, not newValue, because they are cached by top function
- * NOTE:
- * 1. Do not add fetch, XMLHttpRequest, EventSource
- */
-export const GLOBAL_CACHED_KEY = 'window,self,globalThis,document,Document,Array,Object,String,Boolean,Math,Number,Symbol,Date,Function,Proxy,WeakMap,WeakSet,Set,Map,Reflect,Element,Node,RegExp,Error,TypeError,JSON,isNaN,parseFloat,parseInt,performance,console,decodeURI,encodeURI,decodeURIComponent,encodeURIComponent,navigator,undefined,location,history'
+export const HIJACK_LOCATION_KEYS = [
+  'host',
+  'hostname',
+  'port',
+  'protocol',
+  'origin',
+]

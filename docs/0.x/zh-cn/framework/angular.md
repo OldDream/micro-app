@@ -175,7 +175,7 @@ window.addEventListener('unmount', function () {
 ## 实战案例
 以上介绍了angular如何接入微前端，但在实际使用中会涉及更多功能，如数据通信、路由跳转、打包部署，为此我们提供了一套案例，用于展示angular作为基座嵌入(或作为子应用被嵌入) react、vue、angular、vite、nextjs、nuxtjs等框架，在案例中我们使用尽可能少的代码实现尽可能多的功能。
 
-案例地址：https://github.com/micro-zoe/micro-app-demo
+案例地址：https://github.com/micro-zoe/micro-app-demo-0.x
 
 ## 常见问题
 #### 1、基座是react、nextjs应用，引入zone.js后导致micro-app元素生命周期异常
@@ -193,4 +193,4 @@ window.addEventListener('unmount', function () {
 
 **解决方式：**通过`ngZone.run()`触发更改检测，具体方式如下：
 
-![angular-question3](../../static/images/angular-1.png ':size=800')
+![angular-question3](https://img14.360buyimg.com/imagetools/jfs/t1/207551/36/34684/49729/6523aee1F5efef0be/e50e6d782a223dc9.png ':size=800')

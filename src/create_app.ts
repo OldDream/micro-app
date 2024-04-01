@@ -5,24 +5,23 @@ import type {
   WithSandBoxInterface,
   MountParam,
   UnmountParam,
+  OnLoadParam,
 } from '@micro-app/types'
 import { HTMLLoader } from './source/loader/html'
 import { extractSourceDom } from './source/index'
 import { execScripts } from './source/scripts'
 import WithSandBox from './sandbox/with'
 import IframeSandbox from './sandbox/iframe'
-import { router } from './sandbox/router'
+import { router, isRouterModeSearch } from './sandbox/router'
 import {
   appStates,
   lifeCycles,
   keepAliveStates,
   microGlobalEvent,
   DEFAULT_ROUTER_MODE,
-  ROUTER_MODE_CUSTOM,
 } from './constants'
 import {
   isFunction,
-  cloneContainer,
   isPromise,
   logError,
   getRootContainer,
@@ -64,6 +63,7 @@ export default class CreateApp implements AppInterface {
   private umdHookMount: Func | null = null
   private umdHookUnmount: Func | null = null
   private preRenderEvents?: CallableFunction[] | null
+  private lifeCycleState: string | null = null
   public umdMode = false
   public source: sourceType
   // TODO: 类型优化，加上iframe沙箱
@@ -101,8 +101,9 @@ export default class CreateApp implements AppInterface {
     this.url = url
     this.useSandbox = useSandbox
     this.scopecss = this.useSandbox && scopecss
-    this.inline = inline ?? false
+    // exec before getInlineModeState
     this.iframe = iframe ?? false
+    this.inline = this.getInlineModeState(inline)
     /**
      * NOTE:
      *  1. Navigate after micro-app created, before mount
@@ -131,14 +132,16 @@ export default class CreateApp implements AppInterface {
 
   /**
    * When resource is loaded, mount app if it is not prefetch or unmount
+   * defaultPage disablePatchRequest routerMode baseroute is only for prerender app
    */
-  public onLoad (
-    html: HTMLElement,
-    defaultPage?: string,
-    disablePatchRequest?: boolean,
-    routerMode?: string,
-    baseroute?: string,
-  ): void {
+  public onLoad ({
+    html,
+    // below params is only for prerender app
+    defaultPage,
+    routerMode,
+    baseroute,
+    disablePatchRequest,
+  }: OnLoadParam): void {
     if (++this.loadSourceLevel === 2) {
       this.source.html = html
 
@@ -168,11 +171,11 @@ export default class CreateApp implements AppInterface {
         this.mount({
           container,
           inline: this.inline,
-          routerMode: routerMode!,
-          baseroute: baseroute || '',
           fiber: true,
           defaultPage: defaultPage || '',
           disablePatchRequest: disablePatchRequest ?? false,
+          routerMode: routerMode!,
+          baseroute: baseroute || '',
         })
       }
     }
@@ -220,6 +223,12 @@ export default class CreateApp implements AppInterface {
       this.container = container
       // mount before prerender exec mount (loading source), set isPrerender to false
       this.isPrerender = false
+
+      // dispatch state event to micro app
+      dispatchCustomEventToMicroApp(this, 'statechange', {
+        appState: appStates.LOADING
+      })
+
       // reset app state to LOADING
       return this.setAppState(appStates.LOADING)
     }
@@ -245,6 +254,14 @@ export default class CreateApp implements AppInterface {
         this.container.hasAttribute('prerender')
       ) {
         /**
+         * current this.container is <div prerender='true'></div>
+         * set this.container to <micro-app></micro-app>
+         * NOTE:
+         *  1. must exec before this.sandBox.rebuildEffectSnapshot
+         *  2. must exec before this.preRenderEvents?.forEach((cb) => cb())
+         */
+        this.container = this.cloneContainer(container, this.container, false)
+        /**
          * rebuild effect event of window, document, data center
          * explain:
          * 1. rebuild before exec mount, do nothing
@@ -252,14 +269,6 @@ export default class CreateApp implements AppInterface {
          * 3. rebuild after js exec end, normal recovery effect event
          */
         this.sandBox?.rebuildEffectSnapshot()
-        // current this.container is <div prerender='true'></div>
-        cloneContainer(container as Element, this.container as Element, false)
-        /**
-         * set this.container to <micro-app></micro-app>
-         * NOTE:
-         * must exec before this.preRenderEvents?.forEach((cb) => cb())
-         */
-        this.container = container
         this.preRenderEvents?.forEach((cb) => cb())
         // reset isPrerender config
         this.isPrerender = false
@@ -269,15 +278,18 @@ export default class CreateApp implements AppInterface {
         this.sandBox?.setPreRenderState(false)
       } else {
         this.container = container
-        this.inline = inline
+        this.inline = this.getInlineModeState(inline)
         this.fiber = fiber
         this.routerMode = routerMode
 
-        const dispatchBeforeMount = () => dispatchLifecyclesEvent(
-          this.container!,
-          this.name,
-          lifeCycles.BEFOREMOUNT,
-        )
+        const dispatchBeforeMount = () => {
+          this.setLifeCycleState(lifeCycles.BEFOREMOUNT)
+          dispatchLifecyclesEvent(
+            this.container!,
+            this.name,
+            lifeCycles.BEFOREMOUNT,
+          )
+        }
 
         if (this.isPrerender) {
           (this.preRenderEvents ??= []).push(dispatchBeforeMount)
@@ -286,8 +298,14 @@ export default class CreateApp implements AppInterface {
         }
 
         this.setAppState(appStates.MOUNTING)
+
+        // dispatch state event to micro app
+        dispatchCustomEventToMicroApp(this, 'statechange', {
+          appState: appStates.MOUNTING
+        })
+
         // TODO: 将所有cloneContainer中的'as Element'去掉，兼容shadowRoot的场景
-        cloneContainer(this.container as Element, this.source.html as Element, !this.umdMode)
+        this.cloneContainer(this.container, this.source.html, !this.umdMode)
 
         this.sandBox?.start({
           umdMode: this.umdMode,
@@ -307,6 +325,7 @@ export default class CreateApp implements AppInterface {
                * umdHookUnmount can works in default mode
                * register through window.unmount
                */
+              // TODO: 不对，这里要改，因为unmount不一定是函数
               this.umdHookUnmount = unmount as Func
               // if mount & unmount is function, the sub app is umd mode
               if (isFunction(mount) && isFunction(unmount)) {
@@ -339,8 +358,8 @@ export default class CreateApp implements AppInterface {
       }
     }
 
-    // TODO: any替换为iframe沙箱类型
-    this.iframe ? (this.sandBox as any).sandboxReady.then(nextAction) : nextAction()
+    // TODO: 可优化？
+    this.sandBox ? this.sandBox.sandboxReady.then(nextAction) : nextAction()
   }
 
   /**
@@ -382,6 +401,16 @@ export default class CreateApp implements AppInterface {
         microGlobalEvent.ONMOUNT,
         microApp.getData(this.name, true)
       )
+
+      // dispatch state event to micro app
+      dispatchCustomEventToMicroApp(this, 'statechange', {
+        appState: appStates.MOUNTED
+      })
+
+      // dispatch mounted event to micro app
+      dispatchCustomEventToMicroApp(this, 'mounted')
+
+      this.setLifeCycleState(lifeCycles.MOUNTED)
 
       // dispatch event mounted to parent
       dispatchLifecyclesEvent(
@@ -433,6 +462,11 @@ export default class CreateApp implements AppInterface {
     } catch (e) {
       logError('An error occurred in window.unmount \n', this.name, e)
     }
+
+    // dispatch state event to micro app
+    dispatchCustomEventToMicroApp(this, 'statechange', {
+      appState: appStates.UNMOUNT
+    })
 
     // dispatch unmount event to micro app
     dispatchCustomEventToMicroApp(this, 'unmount')
@@ -500,7 +534,7 @@ export default class CreateApp implements AppInterface {
     unmountcb,
   }: UnmountParam): void {
     if (this.umdMode && this.container && !destroy) {
-      cloneContainer(this.source.html as Element, this.container, false)
+      this.cloneContainer(this.source.html, this.container as HTMLElement, false)
     }
 
     /**
@@ -515,6 +549,8 @@ export default class CreateApp implements AppInterface {
       destroy,
       clearData: clearData || destroy,
     })
+
+    this.setLifeCycleState(lifeCycles.UNMOUNT)
 
     // dispatch unmount event to base app
     dispatchLifecyclesEvent(
@@ -535,6 +571,7 @@ export default class CreateApp implements AppInterface {
     this.preRenderEvents = null
     this.setKeepAliveState(null)
     // in iframe sandbox & default mode, delete the sandbox & iframeElement
+    // TODO: with沙箱与iframe沙箱保持一致：with沙箱默认模式下删除 或者 iframe沙箱umd模式下保留
     if (this.iframe && !this.umdMode) this.sandBox = null
     if (destroy) this.actionsForCompletelyDestroy()
     removeDomScope()
@@ -562,6 +599,7 @@ export default class CreateApp implements AppInterface {
       appState: 'afterhidden',
     })
 
+    this.setLifeCycleState(lifeCycles.AFTERHIDDEN)
     // dispatch afterHidden event to base app
     dispatchLifecyclesEvent(
       this.container!,
@@ -569,7 +607,7 @@ export default class CreateApp implements AppInterface {
       lifeCycles.AFTERHIDDEN,
     )
 
-    if (this.routerMode !== ROUTER_MODE_CUSTOM) {
+    if (isRouterModeSearch(this.name)) {
       // called after lifeCyclesEvent
       this.sandBox?.removeRouteInfoForKeepAliveApp()
     }
@@ -580,9 +618,9 @@ export default class CreateApp implements AppInterface {
     if (this.loadSourceLevel !== 2) {
       getRootContainer(this.container!).unmount()
     } else {
-      this.container = cloneContainer(
+      this.container = this.cloneContainer(
         pureCreateElement('div'),
-        this.container as Element,
+        this.container,
         false,
       )
 
@@ -594,6 +632,14 @@ export default class CreateApp implements AppInterface {
 
   // show app when connectedCallback called with keep-alive
   public showKeepAliveApp (container: HTMLElement | ShadowRoot): void {
+    /**
+     * NOTE:
+     *  1. this.container must set to container(micro-app element) before exec rebuildEffectSnapshot
+     *    ISSUE: https://github.com/micro-zoe/micro-app/issues/1115
+     *  2. rebuildEffectSnapshot must exec before dispatch beforeshow event
+     */
+    const oldContainer = this.container
+    this.container = container
     this.sandBox?.rebuildEffectSnapshot()
 
     // dispatch beforeShow event to micro-app
@@ -610,9 +656,9 @@ export default class CreateApp implements AppInterface {
 
     this.setKeepAliveState(keepAliveStates.KEEP_ALIVE_SHOW)
 
-    this.container = cloneContainer(
-      container,
-      this.container as Element,
+    this.cloneContainer(
+      this.container,
+      oldContainer,
       false,
     )
 
@@ -621,7 +667,7 @@ export default class CreateApp implements AppInterface {
      *  问题：当路由模式为custom时，keep-alive应用在重新展示，是否需要根据子应用location信息更新浏览器地址？
      *  暂时不这么做吧，因为无法确定二次展示时新旧地址是否相同，是否带有特殊信息
      */
-    if (this.routerMode !== ROUTER_MODE_CUSTOM) {
+    if (isRouterModeSearch(this.name)) {
       // called before lifeCyclesEvent
       this.sandBox?.setRouteInfoForKeepAliveApp()
     }
@@ -630,6 +676,8 @@ export default class CreateApp implements AppInterface {
     dispatchCustomEventToMicroApp(this, 'appstate-change', {
       appState: 'aftershow',
     })
+
+    this.setLifeCycleState(lifeCycles.AFTERSHOW)
 
     // dispatch afterShow event to base app
     dispatchLifecyclesEvent(
@@ -644,12 +692,53 @@ export default class CreateApp implements AppInterface {
    * @param e Error
    */
   public onerror (e: Error): void {
+    this.setLifeCycleState(lifeCycles.ERROR)
+
+    // dispatch state event to micro app
+    dispatchCustomEventToMicroApp(this, 'statechange', {
+      appState: appStates.LOAD_FAILED
+    })
+
     dispatchLifecyclesEvent(
       this.container!,
       this.name,
       lifeCycles.ERROR,
       e,
     )
+  }
+
+  /**
+   * Parse htmlString to DOM
+   * NOTE: iframe sandbox will use DOMParser of iframeWindow, with sandbox will use DOMParser of base app
+   * @param htmlString DOMString
+   * @returns parsed DOM
+   */
+  public parseHtmlString (htmlString: string): HTMLElement {
+    const DOMParser = this.sandBox?.proxyWindow
+      ? this.sandBox.proxyWindow.DOMParser
+      : globalEnv.rawWindow.DOMParser
+    return (new DOMParser()).parseFromString(htmlString, 'text/html').body
+  }
+
+  /**
+   * clone origin elements to target
+   * @param origin Cloned element
+   * @param target Accept cloned elements
+   * @param deep deep clone or transfer dom
+   */
+  private cloneContainer <T extends HTMLElement | ShadowRoot | null> (
+    target: T,
+    origin: T,
+    deep: boolean,
+  ): T {
+    // 在基座接受到afterhidden方法后立即执行unmount，彻底destroy应用时，因为unmount时同步执行，所以this.container为null后才执行cloneContainer
+    if (origin && target) {
+      target.innerHTML = ''
+      Array.from(deep ? this.parseHtmlString(origin.innerHTML).childNodes : origin.childNodes).forEach((node) => {
+        target.appendChild(node)
+      })
+    }
+    return target
   }
 
   /**
@@ -660,22 +749,31 @@ export default class CreateApp implements AppInterface {
    */
   private createSandbox (): void {
     if (this.useSandbox && !this.sandBox) {
-      if (this.iframe) {
-        this.sandBox = new IframeSandbox(this.name, this.url)
-      } else {
-        this.sandBox = new WithSandBox(this.name, this.url)
-      }
+      this.sandBox = this.iframe ? new IframeSandbox(this.name, this.url) : new WithSandBox(this.name, this.url)
     }
   }
 
   // set app state
   public setAppState (state: string): void {
     this.state = state
+
+    // set window.__MICRO_APP_STATE__
+    this.sandBox?.setStaticAppState(state)
   }
 
   // get app state
   public getAppState (): string {
     return this.state
+  }
+
+  // set app lifeCycleState
+  private setLifeCycleState (state: string): void {
+    this.lifeCycleState = state
+  }
+
+  // get app lifeCycleState
+  public getLifeCycleState (): string {
+    return this.lifeCycleState || ''
   }
 
   // set keep-alive state
@@ -731,6 +829,15 @@ export default class CreateApp implements AppInterface {
 
   public querySelectorAll (selectors: string): NodeListOf<Node> {
     return this.container ? globalEnv.rawElementQuerySelectorAll.call(this.container, selectors) : []
+  }
+
+  /**
+   * NOTE:
+   * 1. If the iframe sandbox no longer enforces the use of inline mode in the future, the way getElementsByTagName retrieves the script from the iframe by default needs to be changed, because in non inline mode, the script in the iframe may be empty
+   * @param inline inline mode config
+   */
+  private getInlineModeState (inline?: boolean): boolean {
+    return (this.iframe || inline) ?? false
   }
 }
 

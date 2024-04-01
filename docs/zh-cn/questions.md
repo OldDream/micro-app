@@ -100,7 +100,7 @@ microApp.start({
   **原因：**当跨域时(主应用和文件在不同域名下)，无法通过a标签的download属性实现下载。
 
   **解决方式：**
-  
+
   **方式1：**转换为blob形式下载
   ```html
   <a href='xxx.png' download="filename.png" @click='downloadFile'>下载</a>
@@ -129,3 +129,76 @@ microApp.start({
 
   **方式2：**将文件放到主应用域名下，判断微前端环境下a标签href属性设置为主应用的文件地址
 
+## 10、iconfont 图标冲突了如何处理？
+
+| 产生原因                                        | 解决方案                                                     |
+| ----------------------------------------------- | ------------------------------------------------------------ |
+| 主应用和子应用 unicode 使用同一编码导致图标冲突 | 选择冲突图标，在iconfont中修改对应的unicode编码并重新生成文件进行替换 |
+| 主应用和子应用 class/fontFamily 冲突            | 修改冲突应用下使用iconfont的的相关类名和对应的font-face下fontFamily |
+
+**主应用和子应用 class/fontFamily 冲突 解决示例**
+
+```css
+@font-face {
+-  font-family: "iconfont";
++  font-family: "iconfont1";
+   src: url('iconfont.woff2?t=1704871404008') format('woff2'),
+       url('iconfont.woff?t=1704871404008') format('woff'),
+       url('iconfont.ttf?t=1704871404008') format('truetype');
+}
+
+-.iconfont {
++.iconfont1 {
+  font-family: "iconfont" !important;
+  font-size: 16px;
+  font-style: normal;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+.right:before {
+  content: "\e7eb";
+}
+```
+
+```html
+- <i className="iconfont right"></i>
++ <i className="iconfont1 right"></i>
+```
+
+## 11、Vue主应用接入微前端时循环刷新（页面闪烁）
+
+**解决方式：**将主应用router-view或者包含微前端的上层组件中`:key="route.fullPath"`改为`:key="route.path"`或者`:key="route.name"`
+
+**例如：**
+
+```html
+<!-- bad 😭 -->
+<router-view v-slot="{ Component, route }">
+  <transition name="fade">
+    <component :is="Component" :key="route.fullPath" />
+  </transition>
+</router-view>
+
+<!-- good 😊 -->
+<router-view v-slot="{ Component, route }">
+  <transition name="fade">
+    <component :is="Component" :key="route.path" />
+  </transition>
+</router-view>
+```
+
+```html
+<!-- bad 😭 -->
+<router-view :key="$route.fullPath"></router-view>
+
+<!-- good 😊 -->
+<router-view :key="$route.path"></router-view>
+```
+
+## 12、iframe沙箱加载了主应用的资源
+
+**解决方式：**如果主应用不会作为iframe嵌入，可以在主应用head最前面插入下面js
+```html
+<script>if(window.parent !== window) {window.stop()}</script>
+```

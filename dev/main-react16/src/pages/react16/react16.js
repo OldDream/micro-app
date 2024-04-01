@@ -17,13 +17,13 @@ export default class App extends React.Component {
       name: '初始化数据'
     },
     name: 'react#16',
-    url: `${config.react16}micro-app/react16/?a=1`,
+    url: `${config.react16}micro-app/react16/index.html`,
     // url: 'http://127.0.0.1:8080/micro-app/react16',
     showLoading: true,
     showMicroApp: true,
     testNum: 0,
     showModal: false,
-    routerMode: 'custom',
+    routerMode: 'state',
     baseroute: '/micro-app/demo/react16',
   }
 
@@ -190,18 +190,6 @@ export default class App extends React.Component {
     })
   }
 
-  changeRouterMode = () => {
-    const newMode = {
-      custom: 'search',
-      search: 'history',
-      history: 'custom',
-    }
-
-    this.setState({
-      routerMode: newMode[this.state.routerMode],
-    })
-  }
-
   changeTestNum = () => {
     this.setState({
       testNum: this.state.testNum + 1,
@@ -209,15 +197,22 @@ export default class App extends React.Component {
   }
 
   jumpToHome = () => {
-    microApp.router.push({name: this.state.name, path: this.state.baseroute + '/'})
+    const basePath = ['native', 'native-scope'].includes(this.state.routerMode) ? this.state.baseroute : '/micro-app/react16'
+    microApp.router.push({name: this.state.name, path: basePath + '/'})
   }
 
   jumpToPage2 = () => {
-    microApp.router.push({name: this.state.name, path: this.state.baseroute + '/page2'})
+    const basePath = ['native', 'native-scope'].includes(this.state.routerMode) ? this.state.baseroute : '/micro-app/react16'
+    microApp.router.push({name: this.state.name, path: basePath + '/page2'}).then(() => {
+      console.log('跳转成功')
+    }).catch(() => {
+      console.error('跳转失败')
+    })
   }
 
-  jumpToInline = () => {
-    microApp.router.push({name: this.state.name, path: this.state.baseroute + '/inline'})
+  jumpToNest = () => {
+    const basePath = ['native', 'native-scope'].includes(this.state.routerMode) ? this.state.baseroute : '/micro-app/react16'
+    microApp.router.push({name: this.state.name, path: basePath + '/nest'})
   }
 
   useRouterGo = () => {
@@ -286,7 +281,6 @@ export default class App extends React.Component {
           // 'keep-router-state': true,
           // 'hidden-router': true,
           // 'disable-patch-request': true,
-          // esmodule: true,
           // fiber: true,
           // ssr: true,
           // baseroute: '/micro-app/demo/react16',
@@ -357,28 +351,28 @@ export default class App extends React.Component {
     //   })
     // }, 0);
 
-    // this.releaseBeforeEach1 = microApp.router.beforeEach((to, from, appName) => {
-    //   // const a = document.createElement('div')
-    //   // a.innerHTML = '44444444'
-    //   // document.body.appendChild(a)
-    //   console.log('全局 beforeEach: ', to, from, appName)
-    // })
+    this.releaseBeforeEach1 = microApp.router.beforeEach((to, from, appName) => {
+      // const a = document.createElement('div')
+      // a.innerHTML = '44444444'
+      // document.body.appendChild(a)
+      console.log('全局 beforeEach: ', to, from, appName)
+    })
 
-    // this.releaseBeforeEach2 = microApp.router.beforeEach({
-    //   react16 (to, from) {
-    //     console.log('指定 beforeEach: ', to, from)
-    //   }
-    // })
+    this.releaseBeforeEach2 = microApp.router.beforeEach({
+      react16 (to, from) {
+        console.log('指定 beforeEach: ', to, from)
+      }
+    })
 
-    // this.releaseAfterEach1 = microApp.router.afterEach((to, from, appName) => {
-    //   console.log('全局 afterEach: ', to, from, appName)
-    // })
+    this.releaseAfterEach1 = microApp.router.afterEach((to, from, appName) => {
+      console.log('全局 afterEach: ', to, from, appName)
+    })
 
-    // this.releaseAfterEach2 = microApp.router.afterEach({
-    //   react16 (to, from) {
-    //     console.log('指定 afterEach: ', to, from)
-    //   }
-    // })
+    this.releaseAfterEach2 = microApp.router.afterEach({
+      react16 (to, from) {
+        console.log('指定 afterEach: ', to, from)
+      }
+    })
 
     microApp.router.setBaseAppRouter(this.props.history)
   }
@@ -405,10 +399,9 @@ export default class App extends React.Component {
             {/* <Button type="primary" onClick={this.clearGlobalData}>清空全局数据</Button> */}
             <Button type="primary" onClick={this.changeNameUrl}>切换应用</Button>
             <Button type="primary" onClick={this.useUnmountApp}>主动卸载应用</Button>
-            <Button type="primary" onClick={this.changeRouterMode}>切换路由模式</Button>
             <Button type="primary" onClick={this.jumpToHome}>控制子应用跳转home</Button>
             <Button type="primary" onClick={this.jumpToPage2}>控制子应用跳转page2</Button>
-            <Button type="primary" onClick={this.jumpToInline}>控制子应用跳转inline</Button>
+            <Button type="primary" onClick={this.jumpToNest}>控制子应用跳转nest</Button>
             <Button type="primary" onClick={this.useRouterGo}>调用router.go</Button>
             <Button type="primary" onClick={this.useRouterBack}>调用router.back</Button>
             <Button type="primary" onClick={this.useRouterForward}>调用router.forward</Button>
@@ -446,13 +439,12 @@ export default class App extends React.Component {
                   // disableScopecss
                   // disable-scopecss
                   // shadowDOM
-                  // disable-memory-router={this.state.testNum===1}
-                  router-mode='custom'
+                  // disable-memory-router
+                  router-mode={this.state.routerMode}
                   // keep-router-state
                   // default-page='/micro-app/react16/page2'
                   // hidden-router
                   // disable-patch-request
-                  // esmodule
                   // fiber
                   // ssr
                   // clear-data

@@ -1,23 +1,129 @@
-MicroApp通过自定义location和history，实现了一套虚拟路由系统，子应用运行在这套虚拟路由系统中，和主应用的路由进行隔离，避免相互影响。
-
-子应用的路由信息会作为query参数同步到浏览器地址上，如下：
-
-![alt](../../media/memory-image-1.png ':size=700')
+MicroApp通过拦截浏览器路由事件以及自定义的location、history，实现了一套虚拟路由系统，子应用运行在这套虚拟路由系统中，和主应用的路由进行隔离，避免相互影响。
 
 虚拟路由系统还提供了丰富的功能，帮助用户提升开发效率和使用体验。
 
-## 配置项
-#### 1、关闭虚拟路由系统
-虚拟路由系统是默认开启的，设置`disable-memory-router`可以进行关闭，此时子应用将基于浏览器路由进行渲染，参考[browser-router](/zh-cn/browser-router)
+## 路由模式
+虚拟路由系统分为四种模式：`search`、`native`、`native-scope`、`pure`
+
+<!-- tabs:start -->
+#### ** search模式 **
+search是默认模式，通常不需要特意设置，search模式下子应用的路由信息会作为query参数同步到浏览器地址上，如下：
+
+![alt](https://img12.360buyimg.com/imagetools/jfs/t1/204018/30/36539/9736/6523add2F41753832/31f5ad7e48ea6570.png ':size=700')
 
 **使用方式：**
 
-1、关闭某个子应用的虚拟路由
+设置单个子应用：
+```html
+<micro-app name='xx' url='xx' router-mode='search'></micro-app>
+```
+全局设置：
+```js
+import microApp from '@micro-zoe/micro-app'
+
+microApp.start({
+  'router-mode': 'search',
+})
+```
+
+**注意：search模式可能会导致Vue主应用循环刷新**
+
+**解决方式：**将router-view或者包含微前端的上层组件中`:key="route.fullPath"`改为`:key="route.path"`或者`:key="route.name"`
+
+**例如：**
+
+```html
+<!-- bad 😭 -->
+<router-view v-slot="{ Component, route }">
+  <transition name="fade">
+    <component :is="Component" :key="route.fullPath" />
+  </transition>
+</router-view>
+
+<!-- good 😊 -->
+<router-view v-slot="{ Component, route }">
+  <transition name="fade">
+    <component :is="Component" :key="route.path" />
+  </transition>
+</router-view>
+```
+
+```html
+<!-- bad 😭 -->
+<router-view :key="$route.fullPath"></router-view>
+
+<!-- good 😊 -->
+<router-view :key="$route.path"></router-view>
+```
+
+#### ** native模式 **
+native模式下子应用完全基于浏览器路由系统进行渲染，比search模式拥有更加简洁优雅的的浏览器地址，但相应的需要更加复杂的路由配置，详情参考[native-mode](/zh-cn/native-mode)
+
+**使用方式：**
+
+设置单个子应用：
+```html
+<micro-app name='xx' url='xx' router-mode='native'></micro-app>
+```
+全局设置：
+```js
+import microApp from '@micro-zoe/micro-app'
+
+microApp.start({
+  'router-mode': 'native',
+})
+```
+
+#### ** native-scope模式 **
+native-scope模式的功能和用法和native模式一样，唯一不同点在于native-scope模式下子应用的域名指向自身而非主应用。
+
+**使用方式：**
+
+设置单个子应用：
+```html
+<micro-app name='xx' url='xx' router-mode='native-scope'></micro-app>
+```
+全局设置：
+```js
+import microApp from '@micro-zoe/micro-app'
+
+microApp.start({
+  'router-mode': 'native-scope',
+})
+```
+
+#### ** pure模式 **
+pure模式下子应用独立于浏览器进行渲染，即不修改浏览器地址，也不增加路由堆栈，更像是一个组件。
+
+**使用方式：**
+
+设置单个子应用：
+```html
+<micro-app name='xx' url='xx' router-mode='pure'></micro-app>
+```
+全局设置：
+```js
+import microApp from '@micro-zoe/micro-app'
+
+microApp.start({
+  'router-mode': 'pure',
+})
+```
+<!-- tabs:end -->
+
+
+## 配置项
+#### 1、关闭虚拟路由系统
+实际上虚拟路由系统是无法关闭的，这里的配置只是为了向下兼容旧版本，它的表现和native路由模式一致。
+
+**使用方式：**
+
+1、设置单个子应用
 ```html
 <micro-app name='xx' url='xx' disable-memory-router></micro-app>
 ```
 
-2、关闭所有子应用的虚拟路由
+2、全局设置
 ```js
 import microApp from '@micro-zoe/micro-app'
 
@@ -315,9 +421,17 @@ window.microApp.router.forward()
 
 ## 设置默认页面
 
-子应用加载后会默认渲染首页，但我们常常希望子应用加载后渲染指定的页面，此时可以设置`defaultPage`指定子应用渲染的页面。
+子应用默认渲染首页，但可以通过设置`defaultPage`渲染指定的默认页面。
 
-**方式一：设置default-page属性**
+**注意事项：**
+- 1、defaultPage只在初始化渲染时有效，控制子应用跳转请参考[导航](/zh-cn/router?id=导航)
+- 2、defaultPage必须是子应用页面的绝对地址，为了防止设置错误，建议单独打开子应用，跳转目标页面，复制粘贴浏览器地址，包括hash和search，将此值设置为`defaultPage`，也可以去掉域名，简化代码
+- 3、由于`native`、`native-scope`模式是基于浏览器进行渲染，通过浏览器url控制子应用渲染的页面，`defaultPage`在这两种模式下无效
+
+
+#### 使用方式
+
+**方式一：通过default-page属性设置**
 ```html
 <micro-app default-page='页面地址'></micro-app>
 ```
@@ -507,7 +621,7 @@ const routeInfo = window.microApp.router.current.get('my-app')
 ## 编解码
 **介绍：**子应用同步到浏览器的路由信息是经过特殊编码的(encodeURIComponent + 特殊字符转译)，如果用户想要编码或解码子应用的路由信息，可以使用编解码的API。
 
-![alt](../../media/memory-image-1.png ':size=700')
+![alt](https://img12.360buyimg.com/imagetools/jfs/t1/204018/30/36539/9736/6523add2F41753832/31f5ad7e48ea6570.png ':size=700')
 
 ```js
 /**

@@ -8,13 +8,130 @@
 
 ---
 
+### 1.0.0-rc.5
+
+`2024-2-29`
+
+- **New**
+
+  - 🆕 新增虚拟路由系统`state`模式，用于适配更多使用场景。
+
+- **Bug Fix**
+
+  - 🐞 修复了iframe沙箱下`unhandledrejection`事件失效的问题，[issue 1102](https://github.com/micro-zoe/micro-app/issues/1102)。
+  - 🐞 修复了with沙箱下`keep-alive`子应用二次渲染后无法通过`microApp.router`控制跳转的问题，[issue 1115](https://github.com/micro-zoe/micro-app/issues/1115)。
+  - 🐞 修复了with沙箱下预渲染子应用路由跳转异常的问题。
+  - 🐞 修复了native路由模式下，主应用和子应用都是vue-router@4导致浏览器前进后退路由地址混乱的问题。
+  - 🐞 修复了设置`disable-memory-router`后，部分场景下子应用内部跳转失败的问题，[issue 1132](https://github.com/micro-zoe/micro-app/issues/1132)。
+  - 🐞 修复了iframe沙箱下`Aliplayer`视频播放器无法正常运行的问题。
+  - 🐞 修复了`native`、`disable-memory-router`路由模式下，主应用、子应用都是vue3导致路由冲突导航异常的问题。
+  - 🐞 修复了格式化子应用url导致部分场景下路由匹配异常的问题，[issue 1147](https://github.com/micro-zoe/micro-app/issues/1147)。
+
+- **Update**
+
+  - 🚀 更新了路由相关文档。
+
+
+### 1.0.0-rc.4
+
+`2024-1-31`
+
+- **New**
+
+  - 🆕 新增全局配置`iframeSrc`，用于动态设置iframe沙箱的src地址。
+  - 🆕 新增micro-app元素公有变量`publicPath`、`baseRoute`，用于支持chrome插件，[PR 1052](https://github.com/micro-zoe/micro-app/pull/1052) by [raoenhui](https://github.com/raoenhui)。
+  - 🆕 新增了在iframe沙箱下对`Document.prototype.createElementNS`、`Document.prototype.createDocumentFragment`的拦截和处理。
+  - 🆕 新增了`removeDomScope`方法的配置项`force`，用于在一定时间内解除元素绑定，[issue 995](https://github.com/micro-zoe/micro-app/issues/995)。
+  - 🆕 新增了with沙箱对于`Document.prototype.createElementNS`的直接处理，规避可能存在的元素泄漏风险。
+
+- **Bug Fix**
+
+  - 🐞 修复了父应用非根目录下微应用无法正常渲染的问题，[PR 1037](https://github.com/micro-zoe/micro-app/pull/1037) by [xuhongbo](https://github.com/xuhongbo)。
+  - 🐞 修复了iframe沙箱下antd `Dropdown`、`Tooltip`等组件渲染异常的问题，[PR 1015](https://github.com/micro-zoe/micro-app/pull/1015) by [keuby](https://github.com/keuby)。
+  - 🐞 修复了micro-app url属性为相对地址时没有自动补全导致子应用渲染失败的问题，[PR 1056](https://github.com/micro-zoe/micro-app/pull/1056)。
+  - 🐞 修复了EventTarget在低版本浏览器中的兼容性问题，[issue 1064](https://github.com/micro-zoe/micro-app/issues/1064)，[issue 1065](https://github.com/micro-zoe/micro-app/issues/1065)。
+  - 🐞 修复了with沙箱在部分场景下强隔离变量`scopeProperties`通过`key in window`判断异常的问题。
+  - 🐞 修复了with沙箱在默认模式下用户自定义的强隔离变量`scopeProperties`在卸载时无法清空的问题。
+  - 🐞 修复了with沙箱子应用的`window.onpopstate`兜底到主应用导致多次执行的问题。
+  - 🐞 修复了craco子应用style元素插入顺序错误导致样式优先级混乱的问题，[issue 1071](https://github.com/micro-zoe/micro-app/issues/1071)。
+  - 🐞 修复了在部分场景下子应用重写`Array.prototype.includes`导致死循环的问题，[PR 1067](https://github.com/micro-zoe/micro-app/pull/1067) by [tinymins](https://github.com/tinymins)。
+  - 🐞 修复了在关闭虚拟路由系统时子应用域名与浏览器域名不一致的问题，[issue 937](https://github.com/micro-zoe/micro-app/issues/937)。
+
+- **Update**
+  - 🚀 虚拟路由系统升级，新增`search`、`native`、`native-scope`、`pure`模式，用于适配更多使用场景。
+  - 🚀 优化了对于iframe沙箱`Node.parentNode`的处理方式。
+  - 🚀 优化了iframe沙箱对于插件系统`escapeProperties`的支持。
+  - 🚀 更新了案例。
+
+
+### 1.0.0-rc.3
+
+`2023-12-18`
+
+- **New**
+
+  - 🆕 新增`componentMode`组件模式，micro-app支持单独运行js文件[944](https://github.com/micro-zoe/micro-app/pull/944)。
+  - 🆕 新增方法`getAppState`，用于在基座中获取子应用的状态。
+  - 🆕 新增虚拟路由系统`push`, `replace`方法对Promise的支持。
+  - 🆕 新增对于CSS循环嵌套的支持[956](https://github.com/micro-zoe/micro-app/pull/956)。
+
+- **Bug Fix**
+
+  - 🐞 修复了在非`custom`路由模式下设置baseroute导致子应用渲染失败的问题。
+  - 🐞 修复了`isObject`方法中参数为null导致错误的问题[998](https://github.com/micro-zoe/micro-app/pull/998)。
+  - 🐞 修复了子应用`onerror`事件无法触发的问题[992](https://github.com/micro-zoe/micro-app/pull/992)。
+  - 🐞 修复了iframe沙箱下子应用`Node.ownerDocument`指向错误的问题[988](https://github.com/micro-zoe/micro-app/pull/988)。
+  - 🐞 修复了with沙箱下判断MicroDocument实例时目标为null导致报错的问题[986](https://github.com/micro-zoe/micro-app/pull/986)。
+  - 🐞 修复了iframe沙箱下通过`document.head.querySelector(...)`查询元素异常的问题[984](https://github.com/micro-zoe/micro-app/pull/984)。
+  - 🐞 修复了子应用html自带元素`parentNode`指向异常的问题。
+
+- **Update**
+  - 🚀 更新with沙箱运行逻辑，异步执行初始化操作，确保不同沙箱之间逻辑一致。
+  - 🚀 优化了utils方法中元素判断的方式[998](https://github.com/micro-zoe/micro-app/pull/998)。
+  - 🚀 更新了案例。
+  
+
+### 1.0.0-rc.2
+
+`2023-10-30`
+
+- **New**
+
+  - 🆕 新增了子应用全局变量`__MICRO_APP_STATE__`，用于标记当前应用的状态。
+  - 🆕 新增了子应用document变量`__MICRO_APP_NAME__`，用于标记document所属应用。
+  - 🆕 重写了原型方法`Node.prototype.parentNode`，用于处理特殊元素parentNode的指向问题。
+
+- **Bug Fix**
+
+  - 🐞 修复了在iframe沙箱下循环嵌套的问题。
+  - 🐞 修复了在iframe沙箱下开启`inline`模式导致通过`getElementsByTagName`获取script元素失败的问题。
+
+- **Update**
+  - 🚀 优化了内存占用，在iframe沙箱模式下默认开启inline模式。
+  - 🚀 更新了官网文档。
+  
+
+### 1.0.0-rc.1
+
+`2023-10-16`
+
+- **New**
+
+  - 🆕 新增了Chrome浏览器插件`Micro-App-DevTools`，提高开发效率。
+
+- **Update**
+
+  - 🚀 完善单元测试功能。
+  - 🚀 更新了官网文档。
+
+
 ### 1.0.0-rc.0
 
 `2023-09-22`
 
 - **New**
 
-  - 🆕 新增了子应用全局状态`__MICRO_APP_SANDBOX_TYPE__`，用于标记当前应用的沙箱类型。
+  - 🆕 新增了子应用全局变量`__MICRO_APP_SANDBOX_TYPE__`，用于标记当前应用的沙箱类型。
 
 - **Bug Fix**
 
